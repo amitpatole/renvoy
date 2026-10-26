@@ -141,7 +141,8 @@ func IsCommand(s *pipeline.Step) bool {
 	return false
 }
 
-// DisplayName returns a step's name, or a generated description.
+// DisplayName returns a step's name, or a generated description. Unnamed run
+// steps return "": their script text may hold references or provider macros.
 func DisplayName(s *pipeline.Step) string {
 	if s.Name != "" {
 		return s.Name
@@ -149,12 +150,6 @@ func DisplayName(s *pipeline.Step) string {
 	switch s.Kind() {
 	case pipeline.StepCheckout:
 		return "Checkout"
-	case pipeline.StepRun:
-		first := strings.TrimSpace(strings.SplitN(strings.TrimSpace(s.Run), "\n", 2)[0])
-		if len(first) > 60 {
-			first = first[:57] + "..."
-		}
-		return first
 	case pipeline.StepUses:
 		return s.Uses
 	case pipeline.StepCache:

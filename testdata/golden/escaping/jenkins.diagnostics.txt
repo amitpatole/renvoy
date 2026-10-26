@@ -1,0 +1,2 @@
+info [jenkins] renvoy.yaml:9:3 triggers.push:
+  triggers.push is configured outside the generated file: multibranch pipelines build pushed branches and tags through SCM webhooks or indexing

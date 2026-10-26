@@ -1,0 +1,3 @@
+info [github-actions] renvoy.yaml:
+  the workflow token is limited to contents: read
+  hint: grant more with extensions.github-actions.permissions, e.g. packages: write to push images

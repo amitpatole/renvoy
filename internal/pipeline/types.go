@@ -19,10 +19,11 @@ const (
 
 // Pipeline is the root of a renvoy.yaml document.
 type Pipeline struct {
-	APIVersion string     `yaml:"apiVersion"`
-	Kind       string     `yaml:"kind"`
-	Metadata   Metadata   `yaml:"metadata"`
-	Triggers   Triggers   `yaml:"triggers"`
+	APIVersion string   `yaml:"apiVersion"`
+	Kind       string   `yaml:"kind"`
+	Metadata   Metadata `yaml:"metadata"`
+	Triggers   Triggers `yaml:"triggers"`
+	// Variables hold literal values; after compilation $${ escapes are resolved.
 	Variables  Vars       `yaml:"variables"`
 	Secrets    []string   `yaml:"secrets"`
 	Stages     []*Stage   `yaml:"stages"`

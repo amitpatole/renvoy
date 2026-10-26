@@ -1,0 +1,2 @@
+info [gitlab] renvoy.yaml:32:9 stages[1].jobs[0].name:
+  "image" is a reserved GitLab CI keyword, so the job is named "build:image"

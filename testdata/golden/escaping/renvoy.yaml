@@ -1,0 +1,37 @@
+# Values that must survive quoting in YAML, shell, and Groovy unchanged.
+apiVersion: renvoy.dev/v1alpha1
+kind: Pipeline
+
+metadata:
+  name: escaping
+
+triggers:
+  push: {}
+
+variables:
+  QUOTES: it's "quoted" \ back\slash $HOME ${HOME} `tick`
+  TRIPLE: "a ''' b"
+  MULTI: "line1\nline2"
+  ESCAPED_REF: $${variables.QUOTES}
+
+stages:
+  - name: build
+    jobs:
+      - name: quoting
+        env:
+          GREETING: say "hi" to $USER at ${git.branch}
+        steps:
+          - uses: checkout
+          - name: It's a "named" step
+            run: |
+              echo '${variables.QUOTES}' "${variables.QUOTES}"
+              cat <<'EOF'
+                indented heredoc stays ''' as-is \n
+              EOF
+              echo "${HOME} $${variables.NOT_A_REF}"
+            env:
+              SAFE: plain 'single' "double" \ $dollar
+          - buildImage:
+              image: registry.example.com/app:${git.sha}
+              buildArgs:
+                NOTE: has spaces and "quotes" $x

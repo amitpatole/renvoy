@@ -1,0 +1,22 @@
+warning renvoy.yaml:20:3 extensions.circleci:
+  unknown extension namespace "circleci" is ignored by every provider
+  hint: known namespaces: github-actions, gitlab, azure-devops, jenkins
+
+error [gitlab] renvoy.yaml:30:11 stages[0].jobs[0].container.options:
+  GitLab CI cannot express jobs.container.options
+  hint: GitLab cannot pass docker run options from the pipeline; configure them on the runner
+
+error [gitlab] renvoy.yaml:37:13 stages[0].jobs[0].steps[2].uses:
+  GitLab CI cannot express steps.uses
+  hint: GitLab has no reusable step references; use run steps or CI/CD components in a custom block
+
+error [gitlab] renvoy.yaml:46:13 stages[0].jobs[0].steps[4].when:
+  GitLab CI cannot express steps.when
+  hint: GitLab has no step-level conditions; move the step into a job with a when condition
+
+info [gitlab] renvoy.yaml:55:9 stages[1].jobs[0].runsOn:
+  macos jobs use the GitLab-hosted runner tags [saas-macos-medium-m1]
+  hint: set extensions.gitlab.runnerTags.macos for self-managed runners
+
+info [gitlab] renvoy.yaml:58:11 stages[1].jobs[0].environment.approvals:
+  jobs.environment.approvals is configured outside the generated file: protect the environment and require approvals under Operate > Environments

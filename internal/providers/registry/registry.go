@@ -3,13 +3,19 @@ package registry
 
 import (
 	"github.com/amitpatole/renvoy/internal/providers"
+	"github.com/amitpatole/renvoy/internal/providers/azuredevops"
 	"github.com/amitpatole/renvoy/internal/providers/githubactions"
+	"github.com/amitpatole/renvoy/internal/providers/gitlab"
+	"github.com/amitpatole/renvoy/internal/providers/jenkins"
 )
 
 // All returns every compiled-in provider in display order.
 func All() []providers.Provider {
 	return []providers.Provider{
 		githubactions.New(),
+		gitlab.New(),
+		azuredevops.New(),
+		jenkins.New(),
 	}
 }
 

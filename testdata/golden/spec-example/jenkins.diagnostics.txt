@@ -1,0 +1,11 @@
+info [jenkins] renvoy.yaml:8:3 triggers.push:
+  triggers.push is configured outside the generated file: multibranch pipelines build pushed branches and tags through SCM webhooks or indexing
+
+info [jenkins] renvoy.yaml:9:5 triggers.push.branches:
+  triggers.branchFilters is configured outside the generated file: restrict branch discovery in the multibranch pipeline's branch sources
+
+info [jenkins] renvoy.yaml:10:3 triggers.pullRequest:
+  triggers.pullRequest is configured outside the generated file: enable pull request discovery on the multibranch pipeline
+
+warning [jenkins] renvoy.yaml:46:9 stages[2].jobs[0].environment:
+  Jenkins has no deployment environments; "staging" is only exported as RENVOY_ENVIRONMENT

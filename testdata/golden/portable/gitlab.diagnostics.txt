@@ -1,0 +1,9 @@
+info [gitlab] renvoy.yaml:17:7 triggers.schedules[0]:
+  triggers.schedules is configured outside the generated file: create a pipeline schedule (timezone UTC) for each listed branch under Build > Pipeline schedules; the generated workflow rules accept scheduled pipelines
+
+info [gitlab] renvoy.yaml:57:9 stages[0].jobs[2].runsOn:
+  windows jobs use the GitLab-hosted runner tags [saas-windows-medium-amd64]
+  hint: set extensions.gitlab.runnerTags.windows for self-managed runners
+
+info [gitlab] renvoy.yaml:73:9 stages[1].jobs[1].name:
+  "image" is a reserved GitLab CI keyword, so the job is named "build:image"

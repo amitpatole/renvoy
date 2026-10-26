@@ -1,0 +1,14 @@
+warning renvoy.yaml:20:3 extensions.circleci:
+  unknown extension namespace "circleci" is ignored by every provider
+  hint: known namespaces: github-actions, gitlab, azure-devops, jenkins
+
+error [azure-devops] renvoy.yaml:27:9 stages[0].jobs[0].retries:
+  Azure DevOps Pipelines cannot express jobs.retries
+  hint: Azure Pipelines cannot retry jobs; retry inside the step script or remove retries
+
+error [azure-devops] renvoy.yaml:37:13 stages[0].jobs[0].steps[2].uses:
+  "actions/setup-node@v4" is not an Azure task reference
+  hint: use Name@MajorVersion, e.g. NodeTool@0
+
+info [azure-devops] renvoy.yaml:58:11 stages[1].jobs[0].environment.approvals:
+  jobs.environment.approvals is configured outside the generated file: add an Approvals check to the environment under Pipelines > Environments

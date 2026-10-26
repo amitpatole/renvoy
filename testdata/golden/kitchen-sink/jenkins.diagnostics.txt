@@ -1,0 +1,32 @@
+warning renvoy.yaml:20:3 extensions.circleci:
+  unknown extension namespace "circleci" is ignored by every provider
+  hint: known namespaces: github-actions, gitlab, azure-devops, jenkins
+
+info [jenkins] renvoy.yaml:10:3 triggers.push:
+  triggers.push is configured outside the generated file: multibranch pipelines build pushed branches and tags through SCM webhooks or indexing
+
+info [jenkins] renvoy.yaml:12:1 secrets:
+  create Jenkins secret text credentials with the IDs NPM_TOKEN
+
+error [jenkins] renvoy.yaml:33:13 stages[0].jobs[0].steps[1].cache:
+  Jenkins Declarative Pipeline cannot express steps.cache
+  hint: Jenkins core has no cache step; remove the cache step or use a plugin in a custom block
+
+error [jenkins] renvoy.yaml:37:13 stages[0].jobs[0].steps[2].uses:
+  Jenkins Declarative Pipeline cannot express steps.uses
+  hint: Renvoy does not invent plugin steps; use run steps or a shared library in a custom block
+
+error [jenkins] renvoy.yaml:43:15 stages[0].jobs[0].steps[3].env.NODE_AUTH_TOKEN:
+  Jenkins step environment cannot bind ${secrets.NPM_TOKEN} without interpolating the secret into Groovy
+  hint: reference the secret directly in the script, or bind it in the job env as the whole value
+
+error [jenkins] renvoy.yaml:46:13 stages[0].jobs[0].steps[4].when:
+  Jenkins Declarative Pipeline cannot express steps.when
+  hint: Declarative Pipeline has no step-level conditions; move the step into a job with a when condition
+
+warning [jenkins] renvoy.yaml:56:9 stages[1].jobs[0].environment:
+  Jenkins has no deployment environments; "production" is only exported as RENVOY_ENVIRONMENT
+
+error [jenkins] renvoy.yaml:58:11 stages[1].jobs[0].environment.approvals:
+  Jenkins Declarative Pipeline cannot express provider-managed environment approvals
+  hint: set extensions.jenkins.input on this job to pause for approval, or remove the portable approval requirement

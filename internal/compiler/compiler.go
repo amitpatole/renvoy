@@ -13,6 +13,10 @@ import (
 // It must run after pipeline.Validate reports no errors.
 func Normalize(p *pipeline.Pipeline) diagnostics.List {
 	var diags diagnostics.List
+	// Variable values are literal; resolve $${ escapes once so providers render text.
+	for i, v := range p.Variables {
+		p.Variables[i].Value = pipeline.MustTemplate(v.Value).Literal()
+	}
 	stageByName := map[string]*pipeline.Stage{}
 	for i, s := range p.Stages {
 		s.Index = i

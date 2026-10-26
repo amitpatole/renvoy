@@ -1,0 +1,3 @@
+warning [azure-devops] renvoy.yaml:100:11 stages[2].jobs[0].environment.url:
+  Azure Pipelines environments have no deployment URL; the url is dropped
+  hint: remove url or record it in the environment description

@@ -1,0 +1,23 @@
+info [jenkins] renvoy.yaml:10:3 triggers.push:
+  triggers.push is configured outside the generated file: multibranch pipelines build pushed branches and tags through SCM webhooks or indexing
+
+info [jenkins] renvoy.yaml:11:5 triggers.push.branches:
+  triggers.branchFilters is configured outside the generated file: restrict branch discovery in the multibranch pipeline's branch sources
+
+info [jenkins] renvoy.yaml:12:5 triggers.push.tags:
+  triggers.tags is configured outside the generated file: enable tag discovery on the multibranch pipeline
+
+info [jenkins] renvoy.yaml:13:3 triggers.pullRequest:
+  triggers.pullRequest is configured outside the generated file: enable pull request discovery on the multibranch pipeline
+
+info [jenkins] renvoy.yaml:24:1 secrets:
+  create Jenkins secret text credentials with the IDs REGISTRY_TOKEN, KUBE_CONFIG
+
+info [jenkins] renvoy.yaml:30:5 stages[0].jobs:
+  Jenkins runs the jobs of stage "test" one after another because some depend on others or use a matrix
+
+info [jenkins] renvoy.yaml:64:5 stages[1].jobs:
+  Jenkins runs the jobs of stage "build" one after another because some depend on others or use a matrix
+
+warning [jenkins] renvoy.yaml:98:9 stages[2].jobs[0].environment:
+  Jenkins has no deployment environments; "production" is only exported as RENVOY_ENVIRONMENT
