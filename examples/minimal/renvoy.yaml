@@ -1,0 +1,23 @@
+# The smallest useful pipeline: run tests on every push and pull request.
+apiVersion: renvoy.dev/v1alpha1
+kind: Pipeline
+
+metadata:
+  name: minimal
+
+triggers:
+  push: {}
+  pullRequest: {}
+
+stages:
+  - name: test
+    jobs:
+      - name: unit
+        steps:
+          - uses: checkout
+          - run: make test
+
+extensions:
+  bamboo:
+    projectKey: DEMO
+    planKey: MINIMAL

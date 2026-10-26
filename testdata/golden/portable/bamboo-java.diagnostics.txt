@@ -12,7 +12,7 @@ info [bamboo-java] renvoy.yaml:
 
 error [bamboo-java] renvoy.yaml:11:5 triggers.push.branches:
   Bamboo creates plan branches either for matching branches or for pull requests, not both
-  hint: limit push to the plan's branch, or drop the pull request trigger
+  hint: push to all branches, limit push to the plan's branch, or drop the pull request trigger
 
 error [bamboo-java] renvoy.yaml:12:5 triggers.push.tags:
   Bamboo Java Specs cannot express triggers.tags

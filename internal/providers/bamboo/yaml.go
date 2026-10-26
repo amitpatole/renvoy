@@ -103,7 +103,11 @@ func (pr *YAMLProvider) Render(_ context.Context, p *pipeline.Pipeline, _ provid
 	case "for-pull-request":
 		root.Set("branches", shared.NewMap().Set("create", "for-pull-request"))
 	case "for-new-branch":
-		root.Set("branches", shared.NewMap().Set("create", shared.NewMap().Set("for-new-branch", pl.BranchRegex)))
+		if pl.BranchRegex == allBranches {
+			root.Set("branches", shared.NewMap().Set("create", "for-new-branch"))
+		} else {
+			root.Set("branches", shared.NewMap().Set("create", shared.NewMap().Set("for-new-branch", pl.BranchRegex)))
+		}
 	}
 
 	for _, s := range pl.Stages {

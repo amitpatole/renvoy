@@ -1,0 +1,268 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://renvoy.dev/schemas/renvoy.v1alpha1.schema.json",
+  "title": "Renvoy pipeline (renvoy.dev/v1alpha1)",
+  "description": "Editor support for renvoy.yaml. `renvoy validate` is the authoritative check; it also enforces references, graph rules, and provider capabilities that a schema cannot express.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["apiVersion", "kind", "metadata", "triggers", "stages"],
+  "properties": {
+    "apiVersion": { "const": "renvoy.dev/v1alpha1" },
+    "kind": { "const": "Pipeline" },
+    "metadata": { "$ref": "#/$defs/metadata" },
+    "triggers": { "$ref": "#/$defs/triggers" },
+    "variables": { "$ref": "#/$defs/vars" },
+    "secrets": { "type": "array", "items": { "$ref": "#/$defs/envName" }, "uniqueItems": true },
+    "stages": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/stage" } },
+    "extensions": { "$ref": "#/$defs/extensions" }
+  },
+  "$defs": {
+    "name": {
+      "type": "string",
+      "pattern": "^[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?$",
+      "description": "Lowercase letters, digits, and hyphens, starting with a letter."
+    },
+    "envName": { "type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*$" },
+    "pattern": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9._/-]+\\*?$",
+      "description": "An exact branch or tag name, or a prefix ending in *."
+    },
+    "patterns": { "type": "array", "items": { "$ref": "#/$defs/pattern" } },
+    "vars": {
+      "type": "object",
+      "additionalProperties": { "type": ["string", "number", "boolean"] },
+      "propertyNames": { "$ref": "#/$defs/envName" }
+    },
+    "extensions": {
+      "type": "object",
+      "description": "Provider-specific settings keyed by provider name, e.g. github-actions, gitlab, azure-devops, jenkins, bamboo.",
+      "additionalProperties": { "type": "object" }
+    },
+    "metadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name"],
+      "properties": {
+        "name": { "$ref": "#/$defs/name" },
+        "description": { "type": "string" },
+        "labels": { "type": "object", "additionalProperties": { "type": "string" } }
+      }
+    },
+    "triggers": {
+      "type": "object",
+      "additionalProperties": false,
+      "minProperties": 1,
+      "properties": {
+        "push": { "$ref": "#/$defs/pushTrigger" },
+        "pullRequest": { "$ref": "#/$defs/pullRequestTrigger" },
+        "manual": { "$ref": "#/$defs/manualTrigger" },
+        "schedules": { "type": "array", "items": { "$ref": "#/$defs/schedule" } }
+      }
+    },
+    "pushTrigger": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "branches": { "$ref": "#/$defs/patterns" },
+        "tags": { "$ref": "#/$defs/patterns" }
+      }
+    },
+    "pullRequestTrigger": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": { "branches": { "$ref": "#/$defs/patterns" } }
+    },
+    "manualTrigger": { "type": "object", "additionalProperties": false, "properties": {} },
+    "schedule": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["cron", "branches"],
+      "properties": {
+        "cron": { "type": "string", "description": "Five fields, UTC: minute hour day-of-month month day-of-week." },
+        "branches": { "type": "array", "minItems": 1, "items": { "type": "string" } }
+      }
+    },
+    "condition": {
+      "type": "object",
+      "additionalProperties": false,
+      "minProperties": 1,
+      "properties": {
+        "branches": { "$ref": "#/$defs/patterns" },
+        "events": {
+          "type": "array",
+          "items": { "enum": ["push", "pullRequest", "manual", "schedule"] }
+        }
+      }
+    },
+    "stage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "jobs"],
+      "properties": {
+        "name": { "$ref": "#/$defs/name" },
+        "dependsOn": { "type": "array", "items": { "$ref": "#/$defs/name" } },
+        "when": { "$ref": "#/$defs/condition" },
+        "jobs": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/job" } }
+      }
+    },
+    "job": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "steps"],
+      "properties": {
+        "name": { "$ref": "#/$defs/name" },
+        "dependsOn": { "type": "array", "items": { "$ref": "#/$defs/name" } },
+        "runsOn": { "enum": ["linux", "windows", "macos"] },
+        "container": { "$ref": "#/$defs/container" },
+        "environment": { "$ref": "#/$defs/environment" },
+        "env": { "$ref": "#/$defs/vars" },
+        "when": { "$ref": "#/$defs/condition" },
+        "timeoutMinutes": { "type": "integer", "minimum": 0 },
+        "retries": { "type": "integer", "minimum": 0, "maximum": 10 },
+        "matrix": {
+          "type": "object",
+          "minProperties": 1,
+          "propertyNames": { "$ref": "#/$defs/envName" },
+          "additionalProperties": {
+            "type": "array",
+            "minItems": 1,
+            "items": { "type": ["string", "number"] }
+          }
+        },
+        "steps": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/step" } },
+        "extensions": { "$ref": "#/$defs/extensions" }
+      }
+    },
+    "container": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["image"],
+      "properties": {
+        "image": { "type": "string" },
+        "options": { "type": "string" }
+      }
+    },
+    "environment": {
+      "oneOf": [
+        { "type": "string" },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["name"],
+          "properties": {
+            "name": { "type": "string" },
+            "url": { "type": "string", "pattern": "^https?://" },
+            "approvals": { "$ref": "#/$defs/approvals" }
+          }
+        }
+      ]
+    },
+    "approvals": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": { "required": { "type": "boolean" } }
+    },
+    "step": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": "string" },
+        "env": { "$ref": "#/$defs/vars" },
+        "workingDirectory": { "type": "string" },
+        "when": { "$ref": "#/$defs/condition" },
+        "uses": { "type": "string", "description": "checkout, or a provider-native reusable step reference." },
+        "with": { "$ref": "#/$defs/withInputs" },
+        "run": { "type": "string" },
+        "shell": { "enum": ["bash", "sh", "pwsh"] },
+        "cache": { "$ref": "#/$defs/cacheStep" },
+        "uploadArtifact": { "$ref": "#/$defs/uploadArtifactStep" },
+        "downloadArtifact": { "$ref": "#/$defs/downloadArtifactStep" },
+        "publishTestResults": { "$ref": "#/$defs/testResultsStep" },
+        "buildImage": { "$ref": "#/$defs/buildImageStep" },
+        "pushImage": { "$ref": "#/$defs/pushImageStep" },
+        "deployKubernetes": { "$ref": "#/$defs/deployKubernetesStep" }
+      },
+      "oneOf": [
+        { "required": ["uses"] },
+        { "required": ["run"] },
+        { "required": ["cache"] },
+        { "required": ["uploadArtifact"] },
+        { "required": ["downloadArtifact"] },
+        { "required": ["publishTestResults"] },
+        { "required": ["buildImage"] },
+        { "required": ["pushImage"] },
+        { "required": ["deployKubernetes"] }
+      ]
+    },
+    "withInputs": {
+      "type": "object",
+      "additionalProperties": { "type": ["string", "number", "boolean"] }
+    },
+    "cacheStep": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["key", "paths"],
+      "properties": {
+        "key": { "type": "string" },
+        "files": { "type": "array", "items": { "type": "string" } },
+        "paths": { "type": "array", "minItems": 1, "items": { "type": "string" } }
+      }
+    },
+    "uploadArtifactStep": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "paths"],
+      "properties": {
+        "name": { "type": "string" },
+        "paths": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string" },
+          "description": "Workspace-relative files; directories end with /."
+        }
+      }
+    },
+    "downloadArtifactStep": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name"],
+      "properties": { "name": { "type": "string" } }
+    },
+    "testResultsStep": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path"],
+      "properties": {
+        "path": { "type": "string" },
+        "format": { "const": "junit" }
+      }
+    },
+    "buildImageStep": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["image"],
+      "properties": {
+        "context": { "type": "string" },
+        "dockerfile": { "type": "string" },
+        "image": { "type": "string" },
+        "buildArgs": { "$ref": "#/$defs/vars" }
+      }
+    },
+    "pushImageStep": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["image"],
+      "properties": { "image": { "type": "string" } }
+    },
+    "deployKubernetesStep": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["manifests"],
+      "properties": {
+        "manifests": { "type": "string" },
+        "namespace": { "type": "string" }
+      }
+    }
+  }
+}

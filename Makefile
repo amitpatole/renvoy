@@ -7,8 +7,7 @@ BIN := bin/renvoy
 check: fmt-check lint test examples
 
 fmt-check:
-	@out="$$(gofmt -l . && goimports -local github.com/amitpatole/renvoy -l .)"; \
-	if [ -n "$$out" ]; then echo "needs formatting:"; echo "$$out"; exit 1; fi
+	golangci-lint fmt --diff ./...
 
 lint:
 	golangci-lint run ./...

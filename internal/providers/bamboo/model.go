@@ -26,6 +26,9 @@ const DefaultSpecsVersion = "12.1.12"
 
 const branchVariable = "planRepository.branch"
 
+// allBranches is the plan branch pattern for a push trigger without filters.
+const allBranches = ".*"
+
 // forbiddenDescription lists characters Bamboo rejects in plan descriptions.
 const forbiddenDescription = `"&'<>\`
 
@@ -199,10 +202,17 @@ func validate(p *pipeline.Pipeline, prov providers.Provider, java bool) diagnost
 		add(diagnostics.Errorf("triggers.pullRequest.branches", "Bamboo cannot filter pull requests by target branch").
 			WithHint("remove the branches filter"))
 	}
-	if t.Push != nil && t.PullRequest != nil && branchPattern(t.Push.Branches) != "" {
-		add(diagnostics.Errorf("triggers.push.branches",
-			"Bamboo creates plan branches either for matching branches or for pull requests, not both").
-			WithHint("limit push to the plan's branch, or drop the pull request trigger"))
+	if t.Push != nil && t.PullRequest != nil {
+		switch branchPattern(t.Push.Branches) {
+		case "":
+		case allBranches:
+			add(diagnostics.Warningf("triggers.pullRequest",
+				"Bamboo builds pull requests as plan branches of their source branch, not as merge results"))
+		default:
+			add(diagnostics.Errorf("triggers.push.branches",
+				"Bamboo creates plan branches either for matching branches or for pull requests, not both").
+				WithHint("push to all branches, limit push to the plan's branch, or drop the pull request trigger"))
+		}
 	}
 	if t.Push != nil && len(t.Push.Branches) == 1 && branchPattern(t.Push.Branches) == "" {
 		add(diagnostics.Infof("triggers.push.branches",
@@ -324,7 +334,7 @@ func checkEnvValue(path, value, provider string) diagnostics.List {
 // branches, or "" when the push trigger names only the plan's own branch.
 func branchPattern(branches []string) string {
 	if len(branches) == 0 {
-		return ".*"
+		return allBranches
 	}
 	if len(branches) == 1 {
 		if _, prefix := pipeline.PatternPrefix(branches[0]); !prefix {
@@ -452,6 +462,9 @@ func buildPlan(p *pipeline.Pipeline, ext extension) *plan {
 		pl.Crons = append(pl.Crons, q)
 	}
 	switch {
+	case t.Push != nil && branchPattern(t.Push.Branches) == allBranches:
+		pl.BranchCreate = "for-new-branch"
+		pl.BranchRegex = allBranches
 	case t.PullRequest != nil:
 		pl.BranchCreate = "for-pull-request"
 	case t.Push != nil && branchPattern(t.Push.Branches) != "":

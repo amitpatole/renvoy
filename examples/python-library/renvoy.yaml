@@ -1,0 +1,74 @@
+# A library tested on Linux and Windows, packaged once, and smoke-tested from
+# the built artifact.
+apiVersion: renvoy.dev/v1alpha1
+kind: Pipeline
+
+metadata:
+  name: python-library
+  description: Tests, packages, and smoke-tests a Python library.
+
+triggers:
+  push:
+    branches: [main]
+  pullRequest: {}
+  manual: {}
+
+variables:
+  PIP_DISABLE_PIP_VERSION_CHECK: "1"
+
+stages:
+  - name: test
+    jobs:
+      - name: linux
+        container:
+          image: python:3.12
+        steps:
+          - uses: checkout
+          - name: Install and test
+            run: |
+              pip install -e '.[test]'
+              pytest --junitxml=reports/junit.xml
+          - publishTestResults:
+              path: reports/junit.xml
+
+      - name: windows
+        runsOn: windows
+        steps:
+          - uses: checkout
+          - run: |
+              python -m pip install -e '.[test]'
+              python -m pytest --junitxml=reports/junit.xml
+          - publishTestResults:
+              path: reports/junit.xml
+
+  - name: package
+    jobs:
+      - name: wheel
+        container:
+          image: python:3.12
+        steps:
+          - uses: checkout
+          - run: |
+              pip install build
+              python -m build --outdir dist/
+          - uploadArtifact:
+              name: wheel
+              paths: [dist/]
+
+      - name: smoke
+        dependsOn: [wheel]
+        container:
+          image: python:3.12
+        steps:
+          - downloadArtifact:
+              name: wheel
+          - run: |
+              pip install dist/*.whl
+              python -c "import mylib; print(mylib.__version__)"
+
+extensions:
+  bamboo:
+    projectKey: LIB
+    planKey: PYLIB
+    requirements:
+      windows: ["operating.system=Windows.*"]

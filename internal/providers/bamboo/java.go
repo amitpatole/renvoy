@@ -366,7 +366,10 @@ func planSpec(pl *plan, pkg, server, repo string) string {
 	if pl.BranchCreate != "" {
 		w.use("com.atlassian.bamboo.specs.api.builders.plan.branches.PlanBranchManagement")
 		create := code{".createForPullRequest()"}
-		if pl.BranchCreate == "for-new-branch" {
+		switch {
+		case pl.BranchCreate == "for-new-branch" && pl.BranchRegex == allBranches:
+			create = code{".createForVcsBranch()"}
+		case pl.BranchCreate == "for-new-branch":
 			create = code{".createForVcsBranchMatching(" + jstr(pl.BranchRegex) + ")"}
 		}
 		ms = append(ms, method("planBranchManagement",

@@ -1,0 +1,56 @@
+# The pipeline from the Renvoy build specification, plus the Bamboo keys that
+# Bamboo cannot infer. Try: renvoy generate --all --dry-run -f examples/web-service/renvoy.yaml
+apiVersion: renvoy.dev/v1alpha1
+kind: Pipeline
+
+metadata:
+  name: web-service
+
+triggers:
+  push:
+    branches: [main]
+  pullRequest: {}
+
+variables:
+  IMAGE: ghcr.io/acme/web-service
+
+stages:
+  - name: test
+    jobs:
+      - name: unit-tests
+        runsOn: linux
+        container:
+          image: python:3.12
+        steps:
+          - uses: checkout
+          - run: pip install -r requirements.txt
+          - run: pytest --junitxml=reports/junit.xml
+          - publishTestResults:
+              path: reports/junit.xml
+
+  - name: build
+    dependsOn: [test]
+    jobs:
+      - name: image
+        runsOn: linux
+        steps:
+          - uses: checkout
+          - buildImage:
+              context: .
+              image: ${variables.IMAGE}:${git.sha}
+          - pushImage:
+              image: ${variables.IMAGE}:${git.sha}
+
+  - name: deploy
+    dependsOn: [build]
+    jobs:
+      - name: staging
+        environment: staging
+        steps:
+          - deployKubernetes:
+              manifests: k8s/
+
+extensions:
+  bamboo:
+    projectKey: ACME
+    planKey: WEB

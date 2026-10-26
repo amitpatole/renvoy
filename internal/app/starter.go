@@ -44,7 +44,7 @@ stages:
   # A stage without dependsOn runs after the stage declared before it.
   - name: build
     jobs:
-      - name: image
+      - name: container-image
         # Only build images on main (pull request builds are skipped).
         when:
           branches: [main]
