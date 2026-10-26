@@ -332,7 +332,12 @@ func checkEnvValue(path, value, provider string) diagnostics.List {
 		return diagnostics.List{diagnostics.Errorf(path,
 			"Bamboo task environment values cannot contain double quotes, backslashes, or line breaks").WithProvider(provider)}
 	}
-	for _, ref := range pipeline.MustTemplate(value).Refs() {
+	t := pipeline.MustTemplate(value)
+	if strings.Contains(t.Literal(), "${") {
+		return diagnostics.List{diagnostics.Errorf(path,
+			"Bamboo task environment values cannot contain ${, which Bamboo substitutes").WithProvider(provider)}
+	}
+	for _, ref := range t.Refs() {
 		if ref.Namespace == pipeline.NSGit && ref.Name == pipeline.GitSHA {
 			continue
 		}

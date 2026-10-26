@@ -80,3 +80,29 @@ stages:
 		}
 	}
 }
+
+// An escaped $${ in renvoy.yaml becomes a literal ${ that Bamboo would substitute.
+func TestEscapedSubstitutionNeverReachesTaskEnvironment(t *testing.T) {
+	src := `apiVersion: renvoy.dev/v1alpha1
+kind: Pipeline
+metadata: {name: poc}
+triggers: {push: {}}
+extensions:
+  bamboo: {projectKey: POC, planKey: ESC}
+stages:
+  - name: build
+    jobs:
+      - name: tag
+        env:
+          GREETING: 'hi $${bamboo.planRepository.branchName}'
+        steps:
+          - run: echo hi
+`
+	res := config.Compile([]byte(src), "renvoy.yaml", []string{"bamboo"})
+	if res.Pipeline == nil {
+		t.Fatalf("does not compile: %v", res.Diagnostics)
+	}
+	if !bamboo.NewYAML().Validate(res.Pipeline).HasErrors() {
+		t.Fatal("a literal ${ in a Bamboo env value was accepted")
+	}
+}

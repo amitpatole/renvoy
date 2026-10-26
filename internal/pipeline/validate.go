@@ -28,6 +28,16 @@ var (
 // provider walks. GitHub Actions itself allows 256 jobs per workflow.
 const MaxJobs = 500
 
+// MaxVariableValue bounds a variable value, since some providers inline values.
+const MaxVariableValue = 4096
+
+// MaxInlinedBytes bounds the total size of variable values substituted at
+// references, which bounds how much rendering can amplify the input.
+const MaxInlinedBytes = 1 << 20
+
+// MaxTotalMatrixCombinations bounds matrix expansion across all jobs.
+const MaxTotalMatrixCombinations = 1024
+
 // MaxMatrixCombinations bounds matrix expansion.
 const MaxMatrixCombinations = 256
 
@@ -92,6 +102,9 @@ func (v *validator) run() {
 		}
 		v.warnProviderSyntax(path, va.Value)
 		v.checkControlEnv(path, va.Name, va.Value)
+		if len(va.Value) > MaxVariableValue {
+			v.errorf(path, "variable value is %d bytes; at most %d are allowed", len(va.Value), MaxVariableValue)
+		}
 	}
 	seenSecrets := map[string]bool{}
 	for i, s := range p.Secrets {
@@ -144,6 +157,66 @@ func (v *validator) run() {
 			}
 			v.checkJob(path, job)
 		}
+	}
+	v.checkBudgets()
+}
+
+// checkBudgets bounds how much a pipeline can grow when providers render it.
+func (v *validator) checkBudgets() {
+	combos, inlined := 0, 0
+	count := func(texts ...string) {
+		for _, s := range texts {
+			t, err := ParseTemplate(s)
+			if err != nil {
+				continue
+			}
+			for _, r := range t.Refs() {
+				if r.Namespace == NSVariables {
+					val, _ := v.p.Variables.Get(r.Name)
+					inlined += len(val)
+				}
+			}
+		}
+	}
+	vals := func(vs Vars) []string {
+		out := make([]string, len(vs))
+		for i, e := range vs {
+			out[i] = e.Value
+		}
+		return out
+	}
+	for _, j := range v.p.AllJobs() {
+		n := 1
+		for _, a := range j.Matrix {
+			n *= max(len(a.Values), 1)
+		}
+		combos += n
+		count(vals(j.Env)...)
+		if j.Container != nil {
+			// Azure resolves the image once per matrix combination.
+			for i := 0; i < n; i++ {
+				count(j.Container.Image)
+			}
+		}
+		for _, s := range j.Steps {
+			count(s.Run)
+			count(vals(s.Env)...)
+			count(vals(s.With)...)
+			if s.BuildImage != nil {
+				count(s.BuildImage.Image)
+				count(vals(s.BuildImage.BuildArgs)...)
+			}
+			if s.PushImage != nil {
+				count(s.PushImage.Image)
+			}
+		}
+	}
+	if combos > MaxTotalMatrixCombinations+len(v.p.AllJobs()) {
+		v.errorf("stages", "matrix jobs expand to %d combinations in total; at most %d are supported", combos, MaxTotalMatrixCombinations)
+	}
+	if inlined > MaxInlinedBytes {
+		v.errorf("variables", "variable references expand to %d bytes; at most %d are supported", inlined, MaxInlinedBytes).
+			Hint = "reference large values from a file in the repository instead"
 	}
 }
 
@@ -307,6 +380,7 @@ func (v *validator) checkJob(path string, j *Job) {
 			v.errorf(cp+".image", "container image is required")
 		} else {
 			v.checkTemplate(cp+".image", j.Container.Image, axes, NSVariables, NSMatrix)
+			v.checkExpandedImage(cp+".image", j.Container.Image)
 		}
 		if j.OS() == OSWindows || j.OS() == OSMacOS {
 			v.errorf(cp, "job containers require a linux runner")
@@ -388,7 +462,7 @@ func (v *validator) checkMatrix(path string, m Matrix, axes map[string]bool) {
 	}
 }
 
-var matrixValueRe = regexp.MustCompile(`^[A-Za-z0-9._/-]{1,64}$`)
+var matrixValueRe = regexp.MustCompile(`^[A-Za-z0-9._/][A-Za-z0-9._/-]{0,63}$`)
 
 func (v *validator) checkEnv(path string, env Vars, axes map[string]bool) {
 	for _, e := range env {
@@ -407,14 +481,36 @@ func (v *validator) checkEnv(path string, env Vars, axes map[string]bool) {
 // warnProviderSyntax flags provider expression syntax in values, which some
 // providers evaluate wherever it appears in the generated file.
 func (v *validator) warnProviderSyntax(path, value string) {
-	if strings.Contains(value, "${{") || strings.Contains(value, "$[") || strings.Contains(value, "$(") {
-		v.add(diagnostics.Warningf(path, "value contains provider expression syntax (${{, $[ or $( ), which some providers evaluate").
+	lit := literalText(value)
+	if strings.Contains(lit, "${{") || strings.Contains(lit, "$[") || strings.Contains(lit, "$(") || providerVarRe.MatchString(lit) {
+		v.add(diagnostics.Warningf(path, "value contains provider expression syntax (${{, $[, $( or ${bamboo.}), which some providers evaluate").
 			WithHint("use portable references such as ${secrets.NAME} or ${git.sha}"))
 	}
 }
 
+// providerVarRe matches Bamboo-style ${bamboo.x} / ${system.x} substitutions.
+var providerVarRe = regexp.MustCompile(`\$\{(?:bamboo|system)\.`)
+
+// azureMacroRe matches dotted Azure macros such as $(Build.SourceBranchName),
+// which Azure substitutes into script text before the shell runs it. Plain $(cmd)
+// is shell command substitution and is not flagged.
+var azureMacroRe = regexp.MustCompile(`\$\([A-Za-z_][A-Za-z0-9_]*\.[A-Za-z0-9_.]+\)`)
+
+// literalText returns s with $${ escapes resolved and references removed.
+func literalText(s string) string {
+	t, err := ParseTemplate(s)
+	if err != nil {
+		return s
+	}
+	var b strings.Builder
+	for _, seg := range t {
+		b.WriteString(seg.Literal)
+	}
+	return b.String()
+}
+
 // controlEnvNames change how shells, runtimes, dynamic linkers, or git behave.
-// Setting them runs code that appears in no run step.
+// Setting them runs code that appears in no run step, so author-set values warn.
 var controlEnvNames = map[string]bool{
 	"BASH_ENV": true, "ENV": true, "SHELLOPTS": true, "BASHOPTS": true, "PS4": true, "PROMPT_COMMAND": true,
 	"IFS": true, "PATH": true, "LD_PRELOAD": true, "LD_LIBRARY_PATH": true, "LD_AUDIT": true,
@@ -424,21 +520,56 @@ var controlEnvNames = map[string]bool{
 	"GIT_CONFIG": true, "GIT_CONFIG_GLOBAL": true, "GIT_CONFIG_SYSTEM": true, "GIT_ASKPASS": true,
 }
 
-// isControlEnvName reports names that alter interpreter or tool behavior.
+// isControlEnvName reports names whose author-set values deserve a warning.
 func isControlEnvName(name string) bool {
 	up := strings.ToUpper(name)
 	return controlEnvNames[up] || strings.HasPrefix(up, "GIT_CONFIG_")
 }
 
+// sensitiveExact, sensitivePrefixes, and sensitiveSuffixes cover variables that
+// select programs, configuration, directories, proxies, or CI runner behavior.
+// None of them may take a value from ${git.branch}, which the branch author controls.
+var (
+	sensitiveExact = map[string]bool{
+		"HOME": true, "CDPATH": true, "SHELL": true, "EDITOR": true, "VISUAL": true, "PAGER": true, "TMPDIR": true,
+		"GLIBC_TUNABLES": true, "KUBECONFIG": true, "NODE_PATH": true, "PYTHONHOME": true, "RUBYLIB": true,
+		"HTTP_PROXY": true, "HTTPS_PROXY": true, "ALL_PROXY": true, "NO_PROXY": true, "FTP_PROXY": true,
+	}
+	sensitivePrefixes = []string{"LD_", "DYLD_", "BASH_", "GIT_", "CI_", "FF_", "DOCKER_", "XDG_", "NPM_CONFIG_",
+		"PIP_", "SSL_", "CURL_", "GITHUB_", "RUNNER_", "ACTIONS_", "SYSTEM_", "AGENT_", "BUILD_", "BAMBOO_",
+		"JENKINS_", "KUBE", "PYTHON", "PERL", "RUBY", "JAVA", "NODE_", "GRADLE_", "MAVEN_", "CARGO_", "GO"}
+	sensitiveSuffixes = []string{"_OPTS", "_OPTIONS", "PATH", "_HOME", "_CONFIG", "_DIR", "_PROXY", "_COMMAND"}
+)
+
+// isSensitiveEnvName reports names that must never carry untrusted values.
+func isSensitiveEnvName(name string) bool {
+	up := strings.ToUpper(name)
+	if isControlEnvName(up) || sensitiveExact[up] {
+		return true
+	}
+	for _, p := range sensitivePrefixes {
+		if strings.HasPrefix(up, p) {
+			return true
+		}
+	}
+	for _, s := range sensitiveSuffixes {
+		if strings.HasSuffix(up, s) {
+			return true
+		}
+	}
+	return false
+}
+
 // checkControlEnv rejects untrusted values in interpreter-control variables and
 // warns about author-set ones.
 func (v *validator) checkControlEnv(path, name, value string) {
-	if !isControlEnvName(name) {
+	t, err := ParseTemplate(value)
+	if err == nil && slices.Contains(t.Refs(), Ref{Namespace: NSGit, Name: GitBranch}) && isSensitiveEnvName(name) {
+		v.errorf(path, "%s cannot be set from ${git.branch}: shells, tools, or the CI runner act on this variable, so a branch name could change what runs", name).
+			Hint = "use a neutral name such as BRANCH_NAME"
 		return
 	}
-	t, err := ParseTemplate(value)
-	if err == nil && slices.Contains(t.Refs(), Ref{Namespace: NSGit, Name: GitBranch}) {
-		v.errorf(path, "%s cannot be set from ${git.branch}: shells and tools act on this variable, so a branch name could run code", name)
+	if !isControlEnvName(name) {
 		return
 	}
 	v.add(diagnostics.Warningf(path, "%s changes how shells or tools behave and can run code outside the run steps", name).
@@ -602,9 +733,9 @@ func (v *validator) checkStep(path string, s *Step, j *Job, axes map[string]bool
 	switch kind {
 	case StepRun:
 		v.checkTemplate(path+".run", s.Run, axes, NSVariables, NSSecrets, NSGit, NSMatrix)
-		if strings.Contains(s.Run, "${{") {
-			v.add(diagnostics.Warningf(path+".run", "run script contains provider-specific ${{ }} expression syntax").
-				WithHint("use portable references such as ${secrets.NAME} or ${git.sha}"))
+		if lit := literalText(s.Run); strings.Contains(lit, "${{") || providerVarRe.MatchString(lit) || azureMacroRe.MatchString(lit) {
+			v.add(diagnostics.Warningf(path+".run", "run script contains provider-specific substitution syntax (${{ }}, ${bamboo.x}, or $(Name.Value)), which the provider expands into the script text").
+				WithHint("use portable references such as ${secrets.NAME} or ${git.branch}, which reach scripts as environment variables"))
 		}
 	case StepUses:
 		if !usesRefRe.MatchString(s.Uses) {
@@ -686,26 +817,38 @@ func (v *validator) checkStep(path string, s *Step, j *Job, axes map[string]bool
 	}
 }
 
-var imageCharsRe = regexp.MustCompile(`^[A-Za-z0-9._/:@-]+$`)
-
 func (v *validator) checkImage(path, image string, axes map[string]bool) {
 	if image == "" {
 		v.errorf(path, "image is required")
 		return
 	}
 	v.checkTemplate(path, image, axes, NSVariables, NSGit, NSMatrix)
+	v.checkExpandedImage(path, image)
+}
+
+var expandedImageRe = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._/:@-]*$`)
+
+// checkExpandedImage validates an image name with variable values substituted,
+// because some providers inline variables into image fields.
+func (v *validator) checkExpandedImage(path, image string) {
 	t, err := ParseTemplate(image)
 	if err != nil {
 		return
 	}
-	if strings.HasPrefix(image, "-") {
-		v.errorf(path, "image %q must not start with '-', which docker reads as an option", image)
-		return
-	}
+	var b strings.Builder
 	for _, seg := range t {
-		if seg.Ref == nil && !imageCharsRe.MatchString(seg.Literal) {
-			v.errorf(path, "image %q contains characters that are not valid in an image reference", image)
-			return
+		switch {
+		case seg.Ref == nil:
+			b.WriteString(seg.Literal)
+		case seg.Ref.Namespace == NSVariables:
+			val, _ := v.p.Variables.Get(seg.Ref.Name)
+			b.WriteString(val)
+		default:
+			b.WriteString("x")
 		}
+	}
+	if !expandedImageRe.MatchString(b.String()) {
+		v.errorf(path, "image %q is not a valid image reference once variables are substituted (%q)", image, b.String()).
+			Hint = "use letters, digits, '.', '_', '/', ':', '@' and '-', starting with a letter or digit"
 	}
 }

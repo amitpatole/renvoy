@@ -278,8 +278,10 @@ GitLab `artifacts:when: always`, Azure `succeededOrFailed()`, Jenkins
 - **References in Bamboo environment variables.** Bamboo builds a task's
   environment from one `K="v"` string after substituting variables. Branch names,
   plan variables (which can be overridden when a build is run), and secrets could
-  contain quotes, so Bamboo env values may only be literals (without `"` or `\`)
-  and `${git.sha}`. Reference other values in the script instead.
+  contain quotes, so Bamboo env values may only be literals (without `"`, `\`, or
+  `${`) and `${git.sha}`. Reference other values in the script instead.
+- **GitLab `GIT_STRATEGY`** is set by Renvoy from the job's checkout steps, so a job
+  `env` entry with that name is an error.
 
 ## Provider extensions
 

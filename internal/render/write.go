@@ -69,7 +69,7 @@ func Plan(root string, files []providers.GeneratedFile, source string, force boo
 		if err != nil {
 			if errors.Is(err, ErrMalformedCustomBlock) {
 				conflicts = append(conflicts, Conflict{Path: f.Path, Reason: err.Error(),
-					Hint: "fix the renvoy:begin custom / renvoy:end custom markers; Renvoy will not erase custom content, even with --force"})
+					Hint: "fix the custom block: exactly one renvoy:begin custom / renvoy:end custom pair, holding only additions to the generated content; Renvoy will not erase custom content, even with --force"})
 				continue
 			}
 			return nil, nil, err

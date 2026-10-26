@@ -6,8 +6,11 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/xml"
 	"errors"
 	"fmt"
+	"io"
+	"reflect"
 	"regexp"
 	"strings"
 
@@ -58,7 +61,9 @@ type block struct {
 	begin, end int // line indexes of the markers
 }
 
-var markerMention = regexp.MustCompile(`renvoy:\s*(begin|end)\b`)
+// markerMention catches near-miss markers (any case or spacing) so they are
+// refused instead of silently ignored.
+var markerMention = regexp.MustCompile(`(?i)renvoy:\s*(begin|end)\b`)
 
 // findBlock locates the custom block in lines. It returns ok=false when there is none.
 func findBlock(lines []string, st style) (block, bool, error) {
@@ -126,7 +131,12 @@ func ExtractCustom(content []byte, st style) ([]string, bool, error) {
 var unsafeSourceChar = regexp.MustCompile(`[^A-Za-z0-9._/-]`)
 
 // SafeSource reduces a source name to characters that are inert in every comment syntax.
-func SafeSource(source string) string { return unsafeSourceChar.ReplaceAllString(source, "_") }
+// Runs of dashes are collapsed because "--" is not allowed inside XML comments.
+func SafeSource(source string) string {
+	return dashRun.ReplaceAllString(unsafeSourceChar.ReplaceAllString(source, "_"), "-")
+}
+
+var dashRun = regexp.MustCompile(`-{2,}`)
 
 // header returns the generated header with the given checksum.
 func header(st style, source, sum string) []string {
@@ -191,8 +201,17 @@ func IsGenerated(content []byte, f providers.GeneratedFile) bool {
 func Finalize(f providers.GeneratedFile, source string, existing []byte) ([]byte, error) {
 	st := styleOf(f)
 	body := splitLines(f.Content)
+	generated := joinLines(body)
+	if f.YAML {
+		if err := singleYAMLDocument(generated); err != nil {
+			return nil, fmt.Errorf("internal error: %s output is not valid YAML: %w", f.Path, err)
+		}
+	}
+	var custom []string
 	if existing != nil {
-		custom, ok, err := ExtractCustom(existing, st)
+		var ok bool
+		var err error
+		custom, ok, err = ExtractCustom(existing, st)
 		if err != nil {
 			return nil, err
 		}
@@ -215,11 +234,129 @@ func Finalize(f providers.GeneratedFile, source string, existing []byte) ([]byte
 	}
 	lines[2] = header(st, source, sum)[2]
 	out := joinLines(lines)
-	if f.YAML {
-		var v any
-		if err := yaml.Unmarshal(out, &v); err != nil {
-			return nil, fmt.Errorf("%w: the custom block makes %s invalid YAML: %w", ErrMalformedCustomBlock, f.Path, err)
+	if len(custom) > 0 {
+		if err := checkCustom(f, generated, out, custom); err != nil {
+			return nil, fmt.Errorf("%w: %s: %w", ErrMalformedCustomBlock, f.Path, err)
 		}
 	}
+	if len(out) > MaxExistingSize {
+		return nil, fmt.Errorf("%s would be %d bytes; generated files are limited to %d", f.Path, len(out), MaxExistingSize)
+	}
 	return out, nil
+}
+
+// checkCustom makes sure custom content can only add to a generated file, never
+// change the generated part, so renvoy.yaml stays an accurate description of it.
+func checkCustom(f providers.GeneratedFile, generated, combined []byte, custom []string) error {
+	switch {
+	case f.YAML:
+		if err := singleYAMLDocument(combined); err != nil {
+			return fmt.Errorf("the custom block makes the file invalid YAML: %w", err)
+		}
+		var gen, all map[string]any
+		if err := yaml.Unmarshal(generated, &gen); err != nil {
+			return err
+		}
+		if err := yaml.Unmarshal(combined, &all); err != nil {
+			return fmt.Errorf("the custom block makes the file invalid YAML: %w", err)
+		}
+		for k, v := range gen {
+			if !reflect.DeepEqual(all[k], v) {
+				return fmt.Errorf("the custom block changes the generated %q section; custom YAML may only add new top-level keys", k)
+			}
+		}
+	case f.Comment == providers.CommentXML:
+		dec := xml.NewDecoder(strings.NewReader("<custom>" + strings.Join(custom, "\n") + "</custom>"))
+		dec.Strict = true
+		for {
+			if _, err := dec.Token(); errors.Is(err, io.EOF) {
+				break
+			} else if err != nil {
+				return fmt.Errorf("the custom block is not a well-formed XML fragment: %w", err)
+			}
+		}
+	case f.Comment == providers.CommentSlash:
+		if err := balanced(strings.Join(custom, "\n")); err != nil {
+			return fmt.Errorf("the custom block could change the generated code around it: %w", err)
+		}
+	}
+	return nil
+}
+
+// singleYAMLDocument parses b and requires exactly one document.
+func singleYAMLDocument(b []byte) error {
+	dec := yaml.NewDecoder(bytes.NewReader(b))
+	var first yaml.Node
+	if err := dec.Decode(&first); err != nil {
+		return err
+	}
+	var next yaml.Node
+	if err := dec.Decode(&next); err == nil {
+		return errors.New("it contains more than one YAML document")
+	} else if !errors.Is(err, io.EOF) {
+		return err
+	}
+	return nil
+}
+
+// balanced checks that Groovy or Java code has matching brackets outside strings
+// and comments, so a custom block cannot close the generated scope it sits in.
+func balanced(code string) error {
+	var stack []byte
+	closing := map[byte]byte{')': '(', ']': '[', '}': '{'}
+	for i := 0; i < len(code); {
+		rest := code[i:]
+		switch {
+		case strings.HasPrefix(rest, "//"):
+			end := strings.IndexByte(rest, '\n')
+			if end < 0 {
+				end = len(rest)
+			}
+			i += end
+		case strings.HasPrefix(rest, "/*"):
+			end := strings.Index(rest[2:], "*/")
+			if end < 0 {
+				return errors.New("unterminated block comment")
+			}
+			i += end + 4
+		case strings.HasPrefix(rest, `"""`), strings.HasPrefix(rest, "'''"):
+			q := rest[:3]
+			end := strings.Index(rest[3:], q)
+			if end < 0 {
+				return errors.New("unterminated string")
+			}
+			i += end + 6
+		case rest[0] == '"' || rest[0] == '\'':
+			q := rest[0]
+			j := 1
+			for ; j < len(rest) && rest[j] != q; j++ {
+				if rest[j] == '\\' {
+					j++
+				}
+				if j < len(rest) && rest[j] == '\n' {
+					return errors.New("unterminated string")
+				}
+			}
+			if j >= len(rest) {
+				return errors.New("unterminated string")
+			}
+			i += j + 1
+		default:
+			c := rest[0]
+			switch c {
+			case '(', '[', '{':
+				stack = append(stack, c)
+			case ')', ']', '}':
+				if len(stack) == 0 || stack[len(stack)-1] != closing[c] {
+					return fmt.Errorf("unbalanced %q", c)
+				}
+				stack = stack[:len(stack)-1]
+			}
+			i++
+		}
+	}
+	if len(stack) > 0 {
+		return fmt.Errorf("unclosed %q", stack[len(stack)-1])
+	}
+	return nil
 }

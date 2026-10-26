@@ -292,3 +292,14 @@ func TestValidateEscapesFileName(t *testing.T) {
 		t.Fatalf("raw escape in output: %q", r.stderr)
 	}
 }
+
+func TestGitLabReservesGitStrategy(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "renvoy.yaml"), strings.Replace(app.Starter,
+		"        runsOn: linux\n", "        runsOn: linux\n        env:\n          GIT_STRATEGY: fetch\n", 1))
+	r := run(t, dir, "generate", "-p", "gitlab", "--dry-run")
+	expectCode(t, r, app.ExitIncompatible)
+	if !strings.Contains(r.stderr, "GIT_STRATEGY is set by Renvoy") {
+		t.Fatalf("stderr: %s", r.stderr)
+	}
+}

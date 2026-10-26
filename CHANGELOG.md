@@ -53,3 +53,17 @@ All notable changes to this project are documented here. The format follows
 - Paths and image names may not start with `-`.
 - File names, error messages, and `renvoy diff` output escape terminal control
   characters.
+- Output amplification is bounded: variable values (4 KiB), total substituted
+  variable bytes (1 MiB), total matrix combinations (1,024), and generated files
+  (4 MiB).
+- Custom blocks may only add content: YAML must keep every generated section
+  identical and stay a single document, Groovy and Java blocks must be balanced,
+  and pom.xml blocks must be well-formed. Near-miss markers in any case are refused.
+- `${git.branch}` cannot set any variable that selects programs, configuration,
+  directories, proxies, or CI runner behavior.
+- Warnings for Bamboo `${bamboo.x}` and dotted Azure `$(Name.Value)` substitutions
+  in scripts and values; Bamboo env values reject a literal `${`.
+- Duplicate keys in `env`, `variables`, `with`, `buildArgs`, and `matrix` are
+  errors; GitLab reserves `GIT_STRATEGY`.
+- Container and matrix image names are validated after variable substitution.
+- Source names in headers collapse `--`, keeping `pom.xml` comments well-formed.

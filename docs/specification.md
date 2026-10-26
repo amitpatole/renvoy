@@ -46,8 +46,11 @@ dependency graph, and naming rules that a schema cannot express.
 - **Control variables.** Environment variables that change how shells, runtimes,
   or git behave (`BASH_ENV`, `ENV`, `PATH`, `LD_PRELOAD`, `NODE_OPTIONS`,
   `PYTHONSTARTUP`, `JAVA_TOOL_OPTIONS`, `GIT_SSH_COMMAND`, `GIT_CONFIG_*`, and
-  similar) produce a warning, and are an error when set from `${git.branch}` or
-  used as matrix axes.
+  similar) produce a warning and cannot be matrix axes. `${git.branch}` cannot set
+  any variable that selects programs, configuration, directories, proxies, or CI
+  runner behavior (for example `GIT_*`, `CI_*`, `KUBECONFIG`, `HOME`, `XDG_*`,
+  `DOCKER_*`, `*_OPTS`, `*PATH`, `*_HOME`); use a neutral name such as `BRANCH_NAME`.
+- **Duplicate keys** in `variables`, `env`, `with`, `buildArgs`, and `matrix` are errors.
 - **Paths.** Paths are relative to the workspace, use `/`, never contain `..`, and
   never start with `-`.
   Artifact and cache paths are literal (no wildcards); directories end with `/`.
@@ -173,9 +176,12 @@ or `${HOME}`, passes through unchanged. Write `$${` for a literal `${`.
 `${git.branch}` comes from whoever creates the branch. Renvoy only passes it to
 scripts through environment variables, warns when it is given to a reusable step
 input (`with`), and refuses it in control variables such as `BASH_ENV`. Provider
-expression syntax (`${{ }}`, `$[ ]`, `$( )`) in variables, env, `with`, container
-settings, and step names produces a warning because some providers evaluate it
-anywhere in the generated file.
+expression syntax (`${{ }}`, `$[ ]`, `$( )`, `${bamboo.x}`) in variables, env,
+`with`, container settings, and step names produces a warning because some
+providers evaluate it anywhere in the generated file. In run scripts, `${{ }}`,
+`${bamboo.x}`, and dotted Azure macros such as `$(Build.SourceBranchName)` warn,
+because the provider pastes their values into the script text; plain shell
+`$(command)` does not.
 
 ## Generated files
 
@@ -194,6 +200,11 @@ Each file has a custom block that survives regeneration:
 # Provider-specific content retained during regeneration.
 # renvoy:end custom
 ```
+
+Custom content may only add to a file: new top-level keys in YAML, balanced code
+in a Jenkinsfile or Java Specs, and well-formed elements in `pom.xml`. Content that
+would change the generated part (for example an indented line that joins a
+generated job), an extra YAML document, or a near-miss marker is refused.
 
 `renvoy generate` replaces a file only when it is new, or when Renvoy generated it
 and nobody edited it outside the custom block (the checksum still matches).
@@ -229,5 +240,6 @@ Diagnostics go to stderr; `--dry-run` file content and JSON reports go to stdout
 ## Limits
 
 Config files are read up to 1 MiB, YAML documents up to 100,000 nodes (including
-nodes reached through aliases), pipelines up to 500 jobs, and existing generated
-files up to 4 MiB.
+nodes reached through aliases), pipelines up to 500 jobs, variable values up to
+4 KiB, 1 MiB of variable values substituted at references, 1,024 matrix
+combinations in total, and generated or existing files up to 4 MiB.

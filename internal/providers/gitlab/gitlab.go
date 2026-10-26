@@ -156,6 +156,12 @@ func (pr *Provider) Validate(p *pipeline.Pipeline) diagnostics.List {
 		if slices.Contains(reservedKeys, j.Name) {
 			add(diagnostics.Infof(jp+".name", "%q is a reserved GitLab CI keyword, so the job is named %q", j.Name, jobKey(j)))
 		}
+		for _, e := range j.Env {
+			if strings.EqualFold(e.Name, "GIT_STRATEGY") {
+				add(diagnostics.Errorf(pipeline.JoinKey(jp+".env", e.Name), "GIT_STRATEGY is set by Renvoy from the job's checkout steps").
+					WithHint("add or remove the checkout step instead"))
+			}
+		}
 		if j.Retries > 2 {
 			add(diagnostics.Errorf(jp+".retries", "GitLab retries a job at most 2 times"))
 		}

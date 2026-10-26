@@ -308,11 +308,16 @@ func (w *walker) walkScalarMap(n *yaml.Node, path string) {
 	if !w.expectKind(n, path, yaml.MappingNode, "a mapping") {
 		return
 	}
+	seen := map[string]bool{}
 	for i := 0; i+1 < len(n.Content); i += 2 {
 		k, v := n.Content[i], resolveAlias(n.Content[i+1])
 		kp := JoinKey(path, k.Value)
 		w.sm.record(kp, k)
 		w.visited++
+		if seen[k.Value] {
+			w.errorf(kp, k, "%q is defined more than once", k.Value)
+		}
+		seen[k.Value] = true
 		switch {
 		case v.Kind != yaml.ScalarNode:
 			w.errorf(kp, v, "expected a string value, found %s", kindName(v))
@@ -327,10 +332,15 @@ func (w *walker) walkMatrix(n *yaml.Node, path string) {
 	if !w.expectKind(n, path, yaml.MappingNode, "a mapping of axis names to value lists") {
 		return
 	}
+	seen := map[string]bool{}
 	for i := 0; i+1 < len(n.Content); i += 2 {
 		k, v := n.Content[i], resolveAlias(n.Content[i+1])
 		kp := JoinKey(path, k.Value)
 		w.sm.record(kp, k)
+		if seen[k.Value] {
+			w.errorf(kp, k, "matrix axis %q is defined more than once", k.Value)
+		}
+		seen[k.Value] = true
 		if !w.expectKind(v, kp, yaml.SequenceNode, "a list of values") {
 			continue
 		}
