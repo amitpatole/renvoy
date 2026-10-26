@@ -263,3 +263,30 @@ func TestProvidersCapabilitiesVersion(t *testing.T) {
 		t.Fatalf("version: %s", r.stdout)
 	}
 }
+
+// Existing files may come from an untrusted checkout; diff must not print their
+// terminal control sequences raw.
+func TestDiffEscapesControlCharacters(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "renvoy.yaml"), app.Starter)
+	writeFile(t, filepath.Join(dir, ".gitlab-ci.yml"), "hostile: \x1b]0;pwned\x07\x1b[2J\n")
+	r := run(t, dir, "diff", "-p", "gitlab")
+	expectCode(t, r, app.ExitDiffFound)
+	if strings.ContainsAny(r.stdout, "\x1b\x07") {
+		t.Fatalf("raw control characters in diff output: %q", r.stdout)
+	}
+	if !strings.Contains(r.stdout, `-hostile: \u001b]0;pwned\u0007\u001b[2J`) {
+		t.Fatalf("diff should show escaped controls:\n%s", r.stdout)
+	}
+}
+
+func TestValidateEscapesFileName(t *testing.T) {
+	dir := t.TempDir()
+	name := "\x1b[31mred.yaml"
+	writeFile(t, filepath.Join(dir, name), app.Starter)
+	r := run(t, dir, "validate", "-f", name)
+	expectCode(t, r, app.ExitOK)
+	if strings.Contains(r.stderr, "\x1b") {
+		t.Fatalf("raw escape in output: %q", r.stderr)
+	}
+}

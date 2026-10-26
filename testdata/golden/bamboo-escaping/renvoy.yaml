@@ -29,4 +29,4 @@ stages:
               echo '${variables.QUOTES}' "${variables.UNICODE}"
               printf '%s\n' "tab	here" "\u0022 is not an escape"
             env:
-              SAFE: plain 'single' \ $dollar 🚀
+              SAFE: plain 'single' $dollar 🚀

@@ -205,11 +205,16 @@ func WriteText(w io.Writer, l List) error {
 
 // Sanitize escapes control characters (other than newline) and bidirectional
 // formatting characters so text is safe to print to a terminal.
-func Sanitize(s string) string {
+func Sanitize(s string) string { return sanitize(s, false) }
+
+// SanitizeText is Sanitize but keeps tabs, for file content such as diffs.
+func SanitizeText(s string) string { return sanitize(s, true) }
+
+func sanitize(s string, keepTab bool) string {
 	var b strings.Builder
 	for _, r := range s {
 		switch {
-		case r == '\n':
+		case r == '\n', keepTab && r == '\t':
 			b.WriteRune(r)
 		case r < 0x20 || r == 0x7f || (r >= 0x80 && r <= 0x9f),
 			r >= 0x202a && r <= 0x202e, r >= 0x2066 && r <= 0x2069, r == 0x200e || r == 0x200f || r == 0x061c:

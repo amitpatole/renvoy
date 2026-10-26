@@ -121,11 +121,18 @@ func ExtractCustom(content []byte, st style) ([]string, bool, error) {
 	return append([]string{}, lines[b.begin+1:b.end]...), true, nil
 }
 
+// unsafeSourceChar matches characters that could end a comment line or form a
+// Java \u escape when the source name is written into a header.
+var unsafeSourceChar = regexp.MustCompile(`[^A-Za-z0-9._/-]`)
+
+// SafeSource reduces a source name to characters that are inert in every comment syntax.
+func SafeSource(source string) string { return unsafeSourceChar.ReplaceAllString(source, "_") }
+
 // header returns the generated header with the given checksum.
 func header(st style, source, sum string) []string {
 	return []string{
 		st.line(HeaderLine),
-		st.line("Source: " + source),
+		st.line("Source: " + SafeSource(source)),
 		st.line(checksumLabel + " " + checksumPrefix + sum),
 	}
 }

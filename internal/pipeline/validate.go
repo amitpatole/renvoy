@@ -24,6 +24,10 @@ var (
 	usesRefRe      = regexp.MustCompile(`^[^\s'"\x60$\\]+$`)
 )
 
+// MaxJobs bounds the number of jobs, which bounds the dependency graph that every
+// provider walks. GitHub Actions itself allows 256 jobs per workflow.
+const MaxJobs = 500
+
 // MaxMatrixCombinations bounds matrix expansion.
 const MaxMatrixCombinations = 256
 
@@ -86,6 +90,8 @@ func (v *validator) run() {
 			v.errorf(path, "variable values must be literal; found reference %s", t.Refs()[0]).
 				Hint = "reference other values from steps instead"
 		}
+		v.warnProviderSyntax(path, va.Value)
+		v.checkControlEnv(path, va.Name, va.Value)
 	}
 	seenSecrets := map[string]bool{}
 	for i, s := range p.Secrets {
@@ -117,6 +123,10 @@ func (v *validator) run() {
 		if len(s.Jobs) == 0 {
 			v.errorf(path+".jobs", "stage %q has no jobs", s.Name)
 		}
+	}
+	if n := len(p.AllJobs()); n > MaxJobs {
+		v.errorf("stages", "the pipeline has %d jobs; at most %d are supported", n, MaxJobs)
+		return
 	}
 	jobNames := map[string]bool{}
 	for i, s := range p.Stages {
@@ -304,6 +314,8 @@ func (v *validator) checkJob(path string, j *Job) {
 		if strings.ContainsAny(j.Container.Options, "\n\r") {
 			v.errorf(cp+".options", "container options must be a single line")
 		}
+		v.warnProviderSyntax(cp+".image", j.Container.Image)
+		v.warnProviderSyntax(cp+".options", j.Container.Options)
 	}
 	if e := j.Environment; e != nil {
 		ep := path + ".environment"
@@ -348,6 +360,9 @@ func (v *validator) checkMatrix(path string, m Matrix, axes map[string]bool) {
 	for _, axis := range m {
 		ap := JoinKey(path, axis.Name)
 		v.checkEnvName(ap, axis.Name, "matrix axis")
+		if isControlEnvName(axis.Name) {
+			v.errorf(ap, "matrix axis %q would set an environment variable that changes how shells or tools behave", axis.Name)
+		}
 		if v.takenName(axis.Name) {
 			v.errorf(ap, "matrix axis %q has the same name as a variable or secret (ignoring case)", axis.Name)
 		}
@@ -385,16 +400,49 @@ func (v *validator) checkEnv(path string, env Vars, axes map[string]bool) {
 		}
 		v.checkTemplate(ep, e.Value, axes, NSVariables, NSSecrets, NSGit, NSMatrix)
 		v.warnProviderSyntax(ep, e.Value)
+		v.checkControlEnv(ep, e.Name, e.Value)
 	}
 }
 
 // warnProviderSyntax flags provider expression syntax in values, which some
 // providers evaluate wherever it appears in the generated file.
 func (v *validator) warnProviderSyntax(path, value string) {
-	if strings.Contains(value, "${{") || strings.Contains(value, "$[") {
-		v.add(diagnostics.Warningf(path, "value contains provider expression syntax (${{ or $[), which some providers evaluate").
+	if strings.Contains(value, "${{") || strings.Contains(value, "$[") || strings.Contains(value, "$(") {
+		v.add(diagnostics.Warningf(path, "value contains provider expression syntax (${{, $[ or $( ), which some providers evaluate").
 			WithHint("use portable references such as ${secrets.NAME} or ${git.sha}"))
 	}
+}
+
+// controlEnvNames change how shells, runtimes, dynamic linkers, or git behave.
+// Setting them runs code that appears in no run step.
+var controlEnvNames = map[string]bool{
+	"BASH_ENV": true, "ENV": true, "SHELLOPTS": true, "BASHOPTS": true, "PS4": true, "PROMPT_COMMAND": true,
+	"IFS": true, "PATH": true, "LD_PRELOAD": true, "LD_LIBRARY_PATH": true, "LD_AUDIT": true,
+	"DYLD_INSERT_LIBRARIES": true, "DYLD_LIBRARY_PATH": true, "NODE_OPTIONS": true, "PYTHONSTARTUP": true,
+	"PYTHONPATH": true, "PERL5OPT": true, "PERL5LIB": true, "RUBYOPT": true, "JAVA_TOOL_OPTIONS": true,
+	"_JAVA_OPTIONS": true, "JDK_JAVA_OPTIONS": true, "GIT_SSH_COMMAND": true, "GIT_EXEC_PATH": true,
+	"GIT_CONFIG": true, "GIT_CONFIG_GLOBAL": true, "GIT_CONFIG_SYSTEM": true, "GIT_ASKPASS": true,
+}
+
+// isControlEnvName reports names that alter interpreter or tool behavior.
+func isControlEnvName(name string) bool {
+	up := strings.ToUpper(name)
+	return controlEnvNames[up] || strings.HasPrefix(up, "GIT_CONFIG_")
+}
+
+// checkControlEnv rejects untrusted values in interpreter-control variables and
+// warns about author-set ones.
+func (v *validator) checkControlEnv(path, name, value string) {
+	if !isControlEnvName(name) {
+		return
+	}
+	t, err := ParseTemplate(value)
+	if err == nil && slices.Contains(t.Refs(), Ref{Namespace: NSGit, Name: GitBranch}) {
+		v.errorf(path, "%s cannot be set from ${git.branch}: shells and tools act on this variable, so a branch name could run code", name)
+		return
+	}
+	v.add(diagnostics.Warningf(path, "%s changes how shells or tools behave and can run code outside the run steps", name).
+		WithHint("set it inside the script where it is needed"))
 }
 
 func hasFold(set map[string]bool, name string) bool {
@@ -489,6 +537,9 @@ func (v *validator) checkLiteralPath(path, s string) {
 
 // ValidateRelPath checks that s is a portable, workspace-relative path.
 func ValidateRelPath(s string) error {
+	if strings.HasPrefix(s, "-") {
+		return fmt.Errorf("path %q must not start with '-', which tools read as an option", s)
+	}
 	if strings.HasPrefix(s, "/") || strings.HasPrefix(s, "~") || strings.HasPrefix(s, "\\") ||
 		(len(s) > 1 && s[1] == ':') {
 		return fmt.Errorf("path %q must be relative to the workspace", s)
@@ -526,6 +577,7 @@ func (v *validator) checkStep(path string, s *Step, j *Job, axes map[string]bool
 	if strings.ContainsAny(s.Name, "\n\r") {
 		v.errorf(path+".name", "step names must be a single line")
 	}
+	v.warnProviderSyntax(path+".name", s.Name)
 	kind := kinds[0]
 	v.checkCondition(path+".when", s.When)
 	v.checkEnv(path+".env", s.Env, axes)
@@ -644,6 +696,10 @@ func (v *validator) checkImage(path, image string, axes map[string]bool) {
 	v.checkTemplate(path, image, axes, NSVariables, NSGit, NSMatrix)
 	t, err := ParseTemplate(image)
 	if err != nil {
+		return
+	}
+	if strings.HasPrefix(image, "-") {
+		v.errorf(path, "image %q must not start with '-', which docker reads as an option", image)
 		return
 	}
 	for _, seg := range t {

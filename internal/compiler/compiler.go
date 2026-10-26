@@ -122,6 +122,17 @@ func Normalize(p *pipeline.Pipeline) diagnostics.List {
 			}
 		}
 	}
+	// Ancestor sets are computed once, in topological order, so later per-job
+	// queries are linear rather than re-walking the graph.
+	for _, j := range p.OrderedJobs() {
+		j.Ancestors = map[*pipeline.Job]bool{}
+		for _, d := range j.Needs {
+			j.Ancestors[d] = true
+			for a := range d.Ancestors {
+				j.Ancestors[a] = true
+			}
+		}
+	}
 	diags = append(diags, checkArtifacts(p)...)
 	return diags
 }
@@ -145,20 +156,8 @@ func FinalJobs(s *pipeline.Stage) []*pipeline.Job {
 }
 
 // Ancestors returns every job that must finish before j starts.
-func Ancestors(j *pipeline.Job) map[*pipeline.Job]bool {
-	seen := map[*pipeline.Job]bool{}
-	var visit func(*pipeline.Job)
-	visit = func(x *pipeline.Job) {
-		for _, d := range x.Needs {
-			if !seen[d] {
-				seen[d] = true
-				visit(d)
-			}
-		}
-	}
-	visit(j)
-	return seen
-}
+// It requires a normalized pipeline.
+func Ancestors(j *pipeline.Job) map[*pipeline.Job]bool { return j.Ancestors }
 
 // Artifact describes where an artifact is produced.
 type Artifact struct {

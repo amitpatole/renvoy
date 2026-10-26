@@ -40,3 +40,16 @@ All notable changes to this project are documented here. The format follows
 - `renvoy` refuses a non-regular config file (such as a FIFO) before opening it.
 - The YAML spacing pass keeps the original text whenever spacing would change the
   parsed document.
+- Dependency ancestors are computed once per pipeline and pipelines are limited to
+  500 jobs, so a dense stage graph can no longer make validation hang.
+- The config path written into generated headers is reduced to inert characters,
+  so a directory name cannot add lines (including Java `\u000a` escapes).
+- Bamboo env values may only be literals and `${git.sha}`; variables and secrets
+  are rejected as well as `${git.branch}`.
+- Control variables (`BASH_ENV`, `LD_PRELOAD`, `PATH`, and similar) warn, and are
+  rejected when set from `${git.branch}` or used as matrix axes.
+- Provider expression warnings cover variables, container settings, step names,
+  and Azure `$( )` macros.
+- Paths and image names may not start with `-`.
+- File names, error messages, and `renvoy diff` output escape terminal control
+  characters.

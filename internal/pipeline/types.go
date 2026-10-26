@@ -107,6 +107,8 @@ type Job struct {
 	Index int `yaml:"-"`
 	// SameStageNeeds holds resolved dependsOn jobs. Set by the compiler.
 	SameStageNeeds []*Job `yaml:"-"`
+	// Ancestors holds every job that must finish before this one. Set by the compiler.
+	Ancestors map[*Job]bool `yaml:"-"`
 	// Needs holds the direct job dependencies: same-stage needs, or for a stage's
 	// entry jobs, the final jobs of each needed stage. Set by the compiler.
 	Needs []*Job `yaml:"-"`

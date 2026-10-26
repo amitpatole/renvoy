@@ -47,3 +47,36 @@ stages:
 		}
 	}
 }
+
+// Plan variables can be overridden when a build is run and secrets are not
+// visible to Renvoy, so neither may be substituted into a Bamboo env string.
+func TestVariablesAndSecretsNeverReachTaskEnvironment(t *testing.T) {
+	for _, value := range []string{"${variables.GREETING}", "${secrets.TOKEN}", "a\\b", `say "hi"`} {
+		src := `apiVersion: renvoy.dev/v1alpha1
+kind: Pipeline
+metadata: {name: poc}
+triggers: {push: {}}
+variables: {GREETING: hello}
+secrets: [TOKEN]
+extensions:
+  bamboo: {projectKey: POC, planKey: VARS}
+stages:
+  - name: build
+    jobs:
+      - name: tag
+        env:
+          MSG: '` + strings.ReplaceAll(value, "'", "''") + `'
+        steps:
+          - run: echo hi
+`
+		res := config.Compile([]byte(src), "renvoy.yaml", []string{"bamboo"})
+		if res.Pipeline == nil {
+			t.Fatalf("%s: does not compile: %v", value, res.Diagnostics)
+		}
+		for _, prov := range []providers.Provider{bamboo.NewYAML(), bamboo.NewJava()} {
+			if !prov.Validate(res.Pipeline).HasErrors() {
+				t.Errorf("%s on %s was accepted in a task environment value", value, prov.Name())
+			}
+		}
+	}
+}

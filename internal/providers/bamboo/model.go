@@ -322,19 +322,23 @@ func checkCondition(c *pipeline.Condition, path, provider string) diagnostics.Li
 	return withProvider(diags, provider)
 }
 
+// checkEnvValue keeps task environment strings unambiguous. Bamboo substitutes
+// variables into one K="v" string and then parses it, so any substituted value
+// containing a quote or backslash could add or change environment variables.
+// Branch names, plan variables (overridable when running a build), and secrets
+// are outside the author's control, so only literals and ${git.sha} are allowed.
 func checkEnvValue(path, value, provider string) diagnostics.List {
-	if strings.ContainsAny(value, "\"\n\r") {
+	if strings.ContainsAny(value, "\"\\\n\r") {
 		return diagnostics.List{diagnostics.Errorf(path,
-			"Bamboo task environment values cannot contain double quotes or line breaks").WithProvider(provider)}
+			"Bamboo task environment values cannot contain double quotes, backslashes, or line breaks").WithProvider(provider)}
 	}
-	// Bamboo substitutes variables into one K="v" string and then parses it, so a
-	// branch name containing quotes could add or change environment variables.
 	for _, ref := range pipeline.MustTemplate(value).Refs() {
-		if ref.Namespace == pipeline.NSGit && ref.Name == pipeline.GitBranch {
-			return diagnostics.List{diagnostics.Errorf(path,
-				"Bamboo cannot pass ${git.branch} through task environment variables safely; branch names can contain quotes").
-				WithHint("reference ${git.branch} in the run script instead").WithProvider(provider)}
+		if ref.Namespace == pipeline.NSGit && ref.Name == pipeline.GitSHA {
+			continue
 		}
+		return diagnostics.List{diagnostics.Errorf(path,
+			"Bamboo cannot pass %s through task environment variables safely; its value could contain quotes", ref).
+			WithHint("reference %s in the run script instead", ref).WithProvider(provider)}
 	}
 	return nil
 }

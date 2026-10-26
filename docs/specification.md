@@ -43,7 +43,13 @@ dependency graph, and naming rules that a schema cannot express.
   use letters, digits, and underscores, start with a letter or underscore, and
   must not start with `RENVOY_` (reserved for generated bindings). Variable and
   secret names must be unique ignoring case, because Azure DevOps upper-cases them.
-- **Paths.** Paths are relative to the workspace, use `/`, and never contain `..`.
+- **Control variables.** Environment variables that change how shells, runtimes,
+  or git behave (`BASH_ENV`, `ENV`, `PATH`, `LD_PRELOAD`, `NODE_OPTIONS`,
+  `PYTHONSTARTUP`, `JAVA_TOOL_OPTIONS`, `GIT_SSH_COMMAND`, `GIT_CONFIG_*`, and
+  similar) produce a warning, and are an error when set from `${git.branch}` or
+  used as matrix axes.
+- **Paths.** Paths are relative to the workspace, use `/`, never contain `..`, and
+  never start with `-`.
   Artifact and cache paths are literal (no wildcards); directories end with `/`.
 - **Unknown fields are errors**, with the line, column, and a suggestion.
 
@@ -166,9 +172,10 @@ or `${HOME}`, passes through unchanged. Write `$${` for a literal `${`.
 
 `${git.branch}` comes from whoever creates the branch. Renvoy only passes it to
 scripts through environment variables, warns when it is given to a reusable step
-input (`with`), and refuses it in Bamboo environment values. Provider expression
-syntax (`${{ }}`, `$[ ]`) in values produces a warning because some providers
-evaluate it anywhere in the generated file.
+input (`with`), and refuses it in control variables such as `BASH_ENV`. Provider
+expression syntax (`${{ }}`, `$[ ]`, `$( )`) in variables, env, `with`, container
+settings, and step names produces a warning because some providers evaluate it
+anywhere in the generated file.
 
 ## Generated files
 
@@ -222,4 +229,5 @@ Diagnostics go to stderr; `--dry-run` file content and JSON reports go to stdout
 ## Limits
 
 Config files are read up to 1 MiB, YAML documents up to 100,000 nodes (including
-nodes reached through aliases), and existing generated files up to 4 MiB.
+nodes reached through aliases), pipelines up to 500 jobs, and existing generated
+files up to 4 MiB.

@@ -69,13 +69,13 @@ func Run(args []string, stdout, stderr io.Writer, dir string) int {
 	case errors.As(err, &ee):
 		return ee.code
 	case errors.As(err, &ue):
-		fmt.Fprintf(stderr, "error: %s\nRun 'renvoy --help' for usage.\n", ue.msg)
+		fmt.Fprintf(stderr, "error: %s\nRun 'renvoy --help' for usage.\n", diagnostics.Sanitize(ue.msg))
 		return ExitUsage
 	case isCobraUsage(err):
-		fmt.Fprintf(stderr, "error: %v\nRun 'renvoy --help' for usage.\n", err)
+		fmt.Fprintf(stderr, "error: %s\nRun 'renvoy --help' for usage.\n", diagnostics.Sanitize(err.Error()))
 		return ExitUsage
 	default:
-		fmt.Fprintf(stderr, "error: %v\n", err)
+		fmt.Fprintf(stderr, "error: %s\n", diagnostics.Sanitize(err.Error()))
 		return ExitFailure
 	}
 }
@@ -170,7 +170,7 @@ func (e *env) validateCmd() *cobra.Command {
 				return exitError{ExitInvalidSpec}
 			}
 			if format == "text" {
-				fmt.Fprintf(e.stderr, "%s is valid (%d warning(s))\n", res.SourceMap.File, res.Diagnostics.Count(diagnostics.Warning))
+				fmt.Fprintf(e.stderr, "%s is valid (%d warning(s))\n", diagnostics.Sanitize(res.SourceMap.File), res.Diagnostics.Count(diagnostics.Warning))
 			}
 			return nil
 		},
@@ -337,7 +337,9 @@ func (e *env) diffCmd() *cobra.Command {
 				if p.Existing == nil {
 					from = "/dev/null"
 				}
-				fmt.Fprint(e.stdout, render.UnifiedDiff(from, "b/"+p.Path, p.Existing, p.Content))
+				// Existing files may come from an untrusted checkout; never send
+				// their control characters to the terminal raw.
+				fmt.Fprint(e.stdout, diagnostics.SanitizeText(render.UnifiedDiff(from, "b/"+p.Path, p.Existing, p.Content)))
 			}
 			if changed {
 				return exitError{ExitDiffFound}
@@ -367,18 +369,18 @@ func (e *env) initCmd() *cobra.Command {
 			path := e.abs(file)
 			if info, err := os.Lstat(path); err == nil {
 				if !force {
-					fmt.Fprintf(e.stderr, "error: %s already exists\n  hint: pass --force to replace it\n", file)
+					fmt.Fprintf(e.stderr, "error: %s already exists\n  hint: pass --force to replace it\n", diagnostics.Sanitize(file))
 					return exitError{ExitUnsafeOverwrite}
 				}
 				if !info.Mode().IsRegular() {
-					fmt.Fprintf(e.stderr, "error: %s is not a regular file; refusing to replace it\n", file)
+					fmt.Fprintf(e.stderr, "error: %s is not a regular file; refusing to replace it\n", diagnostics.Sanitize(file))
 					return exitError{ExitUnsafeOverwrite}
 				}
 			}
 			if err := os.WriteFile(path, []byte(Starter), 0o644); err != nil {
 				return err
 			}
-			fmt.Fprintf(e.stderr, "created %s\nnext: renvoy validate && renvoy generate --all --dry-run\n", file)
+			fmt.Fprintf(e.stderr, "created %s\nnext: renvoy validate && renvoy generate --all --dry-run\n", diagnostics.Sanitize(file))
 			return nil
 		},
 	}

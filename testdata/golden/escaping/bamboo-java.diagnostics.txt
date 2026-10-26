@@ -7,7 +7,7 @@ info [bamboo-java] renvoy.yaml:
   hint: set extensions.bamboo.specsVersion to your server version
 
 error [bamboo-java] renvoy.yaml:27:11 stages[0].jobs[0].env.GREETING:
-  Bamboo task environment values cannot contain double quotes or line breaks
+  Bamboo task environment values cannot contain double quotes, backslashes, or line breaks
 
 error [bamboo-java] renvoy.yaml:38:15 stages[0].jobs[0].steps[1].env.SAFE:
-  Bamboo task environment values cannot contain double quotes or line breaks
+  Bamboo task environment values cannot contain double quotes, backslashes, or line breaks
