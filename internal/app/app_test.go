@@ -283,7 +283,9 @@ func TestDiffEscapesControlCharacters(t *testing.T) {
 func TestValidateEscapesFileName(t *testing.T) {
 	dir := t.TempDir()
 	name := "\x1b[31mred.yaml"
-	writeFile(t, filepath.Join(dir, name), app.Starter)
+	if err := os.WriteFile(filepath.Join(dir, name), []byte(app.Starter), 0o644); err != nil {
+		t.Skip("this file system does not allow control characters in names:", err)
+	}
 	r := run(t, dir, "validate", "-f", name)
 	expectCode(t, r, app.ExitOK)
 	if strings.Contains(r.stderr, "\x1b") {
