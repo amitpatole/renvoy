@@ -189,3 +189,22 @@ func TestContainerAndMatrixImagesAreChecked(t *testing.T) {
 	_, diags := parse(t, src)
 	expectError(t, diags, "stages[0].jobs[0].matrix.img[0]", "matrix value")
 }
+
+// Round 3: more names that pick programs, flags, or credential files.
+func TestMoreSensitiveNamesRejectBranchValues(t *testing.T) {
+	for _, name := range []string{"MAKEFLAGS", "RUSTC_WRAPPER", "UV_CONFIG_FILE", "AWS_CONFIG_FILE",
+		"GOOGLE_APPLICATION_CREDENTIALS", "BUNDLE_GEMFILE", "TF_CLI_ARGS", "CC", "CXX"} {
+		src := strings.Replace(minimal, "        steps:\n", "        env:\n          "+name+": '${git.branch}'\n        steps:\n", 1)
+		_, diags := parse(t, src)
+		expectError(t, diags, "stages[0].jobs[0].env."+name, "cannot be set from ${git.branch}")
+	}
+}
+
+func TestPatternLimits(t *testing.T) {
+	long := strings.Repeat("a", pipeline.MaxPatternLength+1)
+	_, diags := parse(t, strings.Replace(minimal, "push: {}", "push:\n    branches: ["+long+"]", 1))
+	expectError(t, diags, "triggers.push.branches[0]", "at most 255")
+	many := strings.TrimSuffix(strings.Repeat("b,", pipeline.MaxPatterns+1), ",")
+	_, diags = parse(t, strings.Replace(minimal, "push: {}", "push:\n    branches: ["+many+"]", 1))
+	expectError(t, diags, "triggers.push.branches", "at most 100")
+}

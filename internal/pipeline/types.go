@@ -6,6 +6,7 @@ package pipeline
 
 import (
 	"fmt"
+	"strings"
 
 	"go.yaml.in/yaml/v3"
 )
@@ -169,6 +170,11 @@ func (e *Environment) RequiresApproval() bool {
 type Condition struct {
 	Branches []string `yaml:"branches"`
 	Events   []string `yaml:"events"`
+}
+
+// Key identifies a condition by content, so identical conditions can be merged.
+func (c *Condition) Key() string {
+	return strings.Join(c.Branches, "\x00") + "\x01" + strings.Join(c.Events, "\x00")
 }
 
 // IsEmpty reports whether the condition restricts nothing.

@@ -265,6 +265,9 @@ func checkCustom(f providers.GeneratedFile, generated, combined []byte, custom [
 				return fmt.Errorf("the custom block changes the generated %q section; custom YAML may only add new top-level keys", k)
 			}
 		}
+		if err := plainCustomYAML(strings.Join(custom, "\n"), gen); err != nil {
+			return err
+		}
 	case f.Comment == providers.CommentXML:
 		dec := xml.NewDecoder(strings.NewReader("<custom>" + strings.Join(custom, "\n") + "</custom>"))
 		dec.Strict = true
@@ -276,8 +279,62 @@ func checkCustom(f providers.GeneratedFile, generated, combined []byte, custom [
 			}
 		}
 	case f.Comment == providers.CommentSlash:
-		if err := balanced(strings.Join(custom, "\n")); err != nil {
+		code := strings.Join(custom, "\n")
+		// Java (and Groovy) decode \uXXXX before lexing, so an escape can become a
+		// newline or a brace that the check below would not see.
+		if strings.Contains(code, `\u`) {
+			return errors.New(`the custom block contains a \u escape, which the compiler decodes before reading the code`)
+		}
+		if err := balanced(code); err != nil {
 			return fmt.Errorf("the custom block could change the generated code around it: %w", err)
+		}
+	}
+	return nil
+}
+
+// plainCustomYAML rejects YAML features that different parsers resolve
+// differently (merge keys, anchors, aliases, explicit tags) and top-level keys
+// that collide, ignoring case, with generated ones.
+func plainCustomYAML(custom string, generated map[string]any) error {
+	var doc yaml.Node
+	if err := yaml.Unmarshal([]byte(custom), &doc); err != nil {
+		return fmt.Errorf("the custom block is not valid YAML on its own: %w", err)
+	}
+	var walk func(n *yaml.Node) error
+	walk = func(n *yaml.Node) error {
+		switch {
+		case n.Kind == yaml.AliasNode:
+			return errors.New("the custom block uses a YAML alias; aliases, anchors, and merge keys are not allowed")
+		case n.Anchor != "":
+			return errors.New("the custom block uses a YAML anchor; aliases, anchors, and merge keys are not allowed")
+		case n.Style&yaml.TaggedStyle != 0:
+			return fmt.Errorf("the custom block uses the explicit YAML tag %q, which is not allowed", n.Tag)
+		}
+		if n.Kind == yaml.MappingNode {
+			for i := 0; i+1 < len(n.Content); i += 2 {
+				if n.Content[i].Value == "<<" {
+					return errors.New("the custom block uses a YAML merge key (<<); aliases, anchors, and merge keys are not allowed")
+				}
+			}
+		}
+		for _, c := range n.Content {
+			if err := walk(c); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+	if err := walk(&doc); err != nil {
+		return err
+	}
+	if len(doc.Content) == 1 && doc.Content[0].Kind == yaml.MappingNode {
+		top := doc.Content[0]
+		for i := 0; i+1 < len(top.Content); i += 2 {
+			for k := range generated {
+				if strings.EqualFold(k, top.Content[i].Value) {
+					return fmt.Errorf("the custom block redefines the generated %q key", k)
+				}
+			}
 		}
 	}
 	return nil
@@ -321,11 +378,16 @@ func balanced(code string) error {
 			i += end + 4
 		case strings.HasPrefix(rest, `"""`), strings.HasPrefix(rest, "'''"):
 			q := rest[:3]
-			end := strings.Index(rest[3:], q)
-			if end < 0 {
+			j := 3
+			for ; j < len(rest) && !strings.HasPrefix(rest[j:], q); j++ {
+				if rest[j] == '\\' {
+					j++
+				}
+			}
+			if j >= len(rest) {
 				return errors.New("unterminated string")
 			}
-			i += end + 6
+			i += j + 3
 		case rest[0] == '"' || rest[0] == '\'':
 			q := rest[0]
 			j := 1
@@ -351,6 +413,10 @@ func balanced(code string) error {
 					return fmt.Errorf("unbalanced %q", c)
 				}
 				stack = stack[:len(stack)-1]
+			case '/':
+				// A bare slash may start a Groovy slashy string (/.../ or $/.../$)
+				// whose extent depends on context, so it is not allowed.
+				return errors.New("a bare '/' (division or a slashy string) is not allowed in custom code; use quoted strings")
 			}
 			i++
 		}

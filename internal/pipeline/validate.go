@@ -273,7 +273,16 @@ func (v *validator) checkTriggers() {
 	}
 }
 
+// MaxPatternLength bounds a branch or tag pattern (git limits ref components similarly).
+const MaxPatternLength = 255
+
+// MaxPatterns bounds the patterns in one list.
+const MaxPatterns = 100
+
 func (v *validator) checkPatterns(path string, pats []string) {
+	if len(pats) > MaxPatterns {
+		v.errorf(path, "%d patterns are listed; at most %d are allowed", len(pats), MaxPatterns)
+	}
 	for i, pat := range pats {
 		if err := ValidatePattern(pat); err != nil {
 			v.errorf(JoinIndex(path, i), "%v", err).
@@ -285,6 +294,9 @@ func (v *validator) checkPatterns(path string, pats []string) {
 // ValidatePattern checks a branch or tag pattern: an exact name, optionally ending
 // in "*" to match every name with that prefix.
 func ValidatePattern(pat string) error {
+	if len(pat) > MaxPatternLength {
+		return fmt.Errorf("pattern is %d characters; at most %d are allowed", len(pat), MaxPatternLength)
+	}
 	if pat == "" || pat == "*" {
 		return fmt.Errorf("invalid pattern %q", pat)
 	}
@@ -534,11 +546,16 @@ var (
 		"HOME": true, "CDPATH": true, "SHELL": true, "EDITOR": true, "VISUAL": true, "PAGER": true, "TMPDIR": true,
 		"GLIBC_TUNABLES": true, "KUBECONFIG": true, "NODE_PATH": true, "PYTHONHOME": true, "RUBYLIB": true,
 		"HTTP_PROXY": true, "HTTPS_PROXY": true, "ALL_PROXY": true, "NO_PROXY": true, "FTP_PROXY": true,
+		"CC": true, "CXX": true, "CPP": true, "LD": true, "AR": true, "AS": true, "MAKEFLAGS": true,
+		"MFLAGS": true, "GNUMAKEFLAGS": true, "MAKE": true,
 	}
 	sensitivePrefixes = []string{"LD_", "DYLD_", "BASH_", "GIT_", "CI_", "FF_", "DOCKER_", "XDG_", "NPM_CONFIG_",
 		"PIP_", "SSL_", "CURL_", "GITHUB_", "RUNNER_", "ACTIONS_", "SYSTEM_", "AGENT_", "BUILD_", "BAMBOO_",
-		"JENKINS_", "KUBE", "PYTHON", "PERL", "RUBY", "JAVA", "NODE_", "GRADLE_", "MAVEN_", "CARGO_", "GO"}
-	sensitiveSuffixes = []string{"_OPTS", "_OPTIONS", "PATH", "_HOME", "_CONFIG", "_DIR", "_PROXY", "_COMMAND"}
+		"JENKINS_", "KUBE", "PYTHON", "PERL", "RUBY", "JAVA", "NODE_", "GRADLE_", "MAVEN_", "CARGO_", "GO",
+		"UV_", "TF_", "AWS_", "GOOGLE_", "AZURE_", "ARM_", "BUNDLE_", "COMPOSER_", "RUSTC", "RUSTUP_", "CONDA",
+		"POETRY_", "YARN_", "PNPM_", "DENO_", "HELM_", "ANSIBLE_", "VAULT_", "SSH_", "GPG", "GNUPG"}
+	sensitiveSuffixes = []string{"_OPTS", "_OPTIONS", "PATH", "_HOME", "_CONFIG", "_DIR", "_PROXY", "_COMMAND",
+		"_FILE", "FLAGS", "_WRAPPER", "_ARGS", "_CMD", "_BIN", "_EXE", "_SHELL", "_PROGRAM"}
 )
 
 // isSensitiveEnvName reports names that must never carry untrusted values.

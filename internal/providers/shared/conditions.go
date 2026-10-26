@@ -20,20 +20,21 @@ func OwnConditions(j *pipeline.Job) []*pipeline.Condition {
 	return out
 }
 
-// InheritedConditions returns the conditions of j and of every upstream job, without
-// duplicates. Providers whose skipped jobs do not skip dependents render these so a
-// job runs only when all of its upstream jobs could have run.
+// InheritedConditions returns the conditions of j and of every upstream job,
+// merging identical conditions. Providers whose skipped jobs do not skip
+// dependents render these so a job runs only when all of its upstream jobs could
+// have run.
 func InheritedConditions(p *pipeline.Pipeline, j *pipeline.Job) []*pipeline.Condition {
 	ancestors := compiler.Ancestors(j)
 	var out []*pipeline.Condition
-	seen := map[*pipeline.Condition]bool{}
+	seen := map[string]bool{}
 	for _, x := range p.OrderedJobs() {
 		if x != j && !ancestors[x] {
 			continue
 		}
 		for _, c := range OwnConditions(x) {
-			if !seen[c] {
-				seen[c] = true
+			if !seen[c.Key()] {
+				seen[c.Key()] = true
 				out = append(out, c)
 			}
 		}

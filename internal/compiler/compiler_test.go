@@ -1,6 +1,7 @@
 package compiler_test
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
@@ -162,4 +163,23 @@ func TestArtifactFromUpstreamStage(t *testing.T) {
 	if res.Pipeline == nil {
 		t.Fatal(res.Diagnostics)
 	}
+}
+
+// Conditions are repeated on every downstream job by several providers, so their
+// total rendered size is bounded (round 3: 846 KB input rendered to 400 MB).
+func TestInheritedConditionBudget(t *testing.T) {
+	var b strings.Builder
+	var pats []string
+	for i := 0; i < 100; i++ {
+		pats = append(pats, fmt.Sprintf("b%03d-%s", i, strings.Repeat("x", 240)))
+	}
+	b.WriteString("  - name: s\n    jobs:\n      - name: j0\n        when: {branches: [" + strings.Join(pats, ", ") + "]}\n" + job)
+	for i := 1; i < 300; i++ {
+		fmt.Fprintf(&b, "      - name: j%d\n        dependsOn: [j%d]\n%s", i, i-1, job)
+	}
+	res := compile(t, b.String())
+	if res.Pipeline != nil {
+		t.Fatal("expected the condition budget to reject this pipeline")
+	}
+	expectError(t, res.Diagnostics, "stages", "conditions repeated on dependent jobs")
 }

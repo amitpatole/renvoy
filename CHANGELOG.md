@@ -67,3 +67,14 @@ All notable changes to this project are documented here. The format follows
   errors; GitLab reserves `GIT_STRATEGY`.
 - Container and matrix image names are validated after variable substitution.
 - Source names in headers collapse `--`, keeping `pom.xml` comments well-formed.
+- Custom YAML may not use anchors, aliases, merge keys, or explicit tags, or
+  redefine a generated key in any case; GitLab's parser applies a later `<<` merge
+  over explicit keys, which let custom content replace a generated job.
+- Custom Groovy and Java may not contain `\u` escapes or a bare `/`, which hid
+  brackets from the structure check (slashy strings, unicode escapes).
+- Branch and tag patterns are limited (255 characters, 100 per list), and the
+  condition text repeated on dependent jobs is bounded; identical inherited
+  conditions are rendered once.
+- More names that select programs, flags, or credential files (`MAKEFLAGS`, `CC`,
+  `*_FILE`, `*_ARGS`, `*_WRAPPER`, `TF_*`, `AWS_*`, and others) reject
+  `${git.branch}`.

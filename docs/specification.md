@@ -49,7 +49,8 @@ dependency graph, and naming rules that a schema cannot express.
   similar) produce a warning and cannot be matrix axes. `${git.branch}` cannot set
   any variable that selects programs, configuration, directories, proxies, or CI
   runner behavior (for example `GIT_*`, `CI_*`, `KUBECONFIG`, `HOME`, `XDG_*`,
-  `DOCKER_*`, `*_OPTS`, `*PATH`, `*_HOME`); use a neutral name such as `BRANCH_NAME`.
+  `DOCKER_*`, `AWS_*`, `TF_*`, `CC`, `MAKEFLAGS`, `*_OPTS`, `*PATH`, `*_HOME`,
+  `*_FILE`, `*FLAGS`, `*_ARGS`, `*_WRAPPER`); use a neutral name such as `BRANCH_NAME`.
 - **Duplicate keys** in `variables`, `env`, `with`, `buildArgs`, and `matrix` are errors.
 - **Paths.** Paths are relative to the workspace, use `/`, never contain `..`, and
   never start with `-`.
@@ -201,10 +202,18 @@ Each file has a custom block that survives regeneration:
 # renvoy:end custom
 ```
 
-Custom content may only add to a file: new top-level keys in YAML, balanced code
-in a Jenkinsfile or Java Specs, and well-formed elements in `pom.xml`. Content that
-would change the generated part (for example an indented line that joins a
-generated job), an extra YAML document, or a near-miss marker is refused.
+Custom content may only add to a file:
+
+- **YAML:** new top-level keys only (compared ignoring case), as one document,
+  without anchors, aliases, merge keys (`<<`), or explicit tags. Different YAML
+  parsers resolve those differently, so they could change a generated job in the
+  provider's eyes while looking unchanged to Renvoy.
+- **Jenkinsfile and Java Specs:** balanced code without `\u` escapes and without a
+  bare `/` outside strings and comments (division, regular expression literals,
+  and Groovy slashy strings), whose extent the check cannot determine.
+- **pom.xml:** well-formed elements.
+
+Content that would change the generated part, or a near-miss marker, is refused.
 
 `renvoy generate` replaces a file only when it is new, or when Renvoy generated it
 and nobody edited it outside the custom block (the checksum still matches).
@@ -242,4 +251,6 @@ Diagnostics go to stderr; `--dry-run` file content and JSON reports go to stdout
 Config files are read up to 1 MiB, YAML documents up to 100,000 nodes (including
 nodes reached through aliases), pipelines up to 500 jobs, variable values up to
 4 KiB, 1 MiB of variable values substituted at references, 1,024 matrix
-combinations in total, and generated or existing files up to 4 MiB.
+combinations in total, branch and tag patterns up to 255 characters and 100 per
+list, 1 MiB of condition text repeated on dependent jobs, and generated or
+existing files up to 4 MiB.

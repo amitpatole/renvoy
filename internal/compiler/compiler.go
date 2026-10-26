@@ -133,8 +133,48 @@ func Normalize(p *pipeline.Pipeline) diagnostics.List {
 			}
 		}
 	}
+	diags = append(diags, checkConditionBudget(p)...)
 	diags = append(diags, checkArtifacts(p)...)
 	return diags
+}
+
+// MaxInheritedConditionBytes bounds the condition text providers repeat on every
+// downstream job (GitLab, Azure, Jenkins, and Bamboo render inherited conditions).
+const MaxInheritedConditionBytes = 1 << 20
+
+func checkConditionBudget(p *pipeline.Pipeline) diagnostics.List {
+	size := func(c *pipeline.Condition) int {
+		if c == nil {
+			return 0
+		}
+		n := 0
+		for _, b := range c.Branches {
+			n += len(b) + 64
+		}
+		return n + 64*len(c.Events)
+	}
+	total := 0
+	for _, j := range p.AllJobs() {
+		seen := map[string]bool{}
+		add := func(c *pipeline.Condition) {
+			if c != nil && !seen[c.Key()] {
+				seen[c.Key()] = true
+				total += size(c)
+			}
+		}
+		add(j.When)
+		add(j.Stage.When)
+		for a := range j.Ancestors {
+			add(a.When)
+			add(a.Stage.When)
+		}
+		if total > MaxInheritedConditionBytes {
+			return diagnostics.List{diagnostics.Errorf("stages",
+				"conditions repeated on dependent jobs would exceed %d bytes", MaxInheritedConditionBytes).
+				WithHint("shorten branch lists in when conditions that many jobs depend on")}
+		}
+	}
+	return nil
 }
 
 // FinalJobs returns the jobs of s that no other job in s depends on, in job order.
