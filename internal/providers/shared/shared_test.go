@@ -4,6 +4,8 @@ import (
 	"strings"
 	"testing"
 
+	"go.yaml.in/yaml/v3"
+
 	"github.com/amitpatole/renvoy/internal/pipeline"
 )
 
@@ -45,5 +47,25 @@ func TestSpacingNeverChangesMeaning(t *testing.T) {
 	plain := []byte("jobs:\n  a: 1\n  b: 2\n")
 	if got := string(spaceSafely(plain)); got != "jobs:\n  a: 1\n\n  b: 2\n" {
 		t.Fatalf("spacing = %q", got)
+	}
+}
+
+// Round 14: strings that a YAML 1.1 parser (GitLab's Psych, Bamboo's SnakeYAML)
+// would read as booleans, numbers, times, merge keys, or symbols are quoted.
+func TestYAML11LookalikesAreQuoted(t *testing.T) {
+	for _, s := range []string{"yes", "No", "ON", "off", "y", "N", "12:30", "1:30", "1,000", "1:30.5", "190:20:30.15",
+		"<<", "=", ":foo", "_", "2001-12-14 21:59:43.10 -5", "1.2.3", "-.Inf", "0x1F"} {
+		if n := Str(s); n.Style != yaml.DoubleQuotedStyle {
+			t.Errorf("%q is not double-quoted", s)
+		}
+	}
+	for _, s := range []string{"main", "ubuntu-latest", "v1.2", "python3", "on_success", "yesterday", "a:b", "1a"} {
+		if n := Str(s); n.Style != 0 {
+			t.Errorf("%q is quoted unnecessarily", s)
+		}
+	}
+	out, err := Encode(NewMap().SetPlainKey("on", "push").Set("on", "yes"))
+	if err != nil || !strings.Contains(string(out), "on: push\n") || !strings.Contains(string(out), `"on": "yes"`) {
+		t.Fatalf("%s %v", out, err)
 	}
 }

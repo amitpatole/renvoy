@@ -290,6 +290,39 @@ func freeBackupPath(root, rel string) (string, error) {
 	return "", errors.New("too many existing backups; remove old .renvoy-backup files")
 }
 
+// ReplaceWithBackup writes content to path atomically. An existing regular file
+// is first saved to a free .renvoy-backup name, whose path is returned, and the
+// new file keeps its permissions.
+func ReplaceWithBackup(path string, content []byte) (string, error) {
+	dir, name := filepath.Split(path)
+	if dir == "" {
+		dir = "."
+	}
+	mode := fs.FileMode(0o644)
+	backup := ""
+	if info, err := os.Lstat(path); err == nil {
+		if !info.Mode().IsRegular() {
+			return "", fmt.Errorf("%s is not a regular file", path)
+		}
+		old, err := os.ReadFile(path)
+		if err != nil {
+			return "", err
+		}
+		rel, err := freeBackupPath(dir, name)
+		if err != nil {
+			return "", err
+		}
+		mode = info.Mode().Perm()
+		backup = filepath.Join(dir, rel)
+		if err := writeAtomic(dir, backup, old, mode); err != nil {
+			return "", fmt.Errorf("backing up: %w", err)
+		}
+	} else if !errors.Is(err, fs.ErrNotExist) {
+		return "", err
+	}
+	return backup, writeAtomic(dir, path, content, mode)
+}
+
 func writeAtomic(dir, target string, content []byte, mode fs.FileMode) error {
 	tmp, err := os.CreateTemp(dir, ".renvoy-*.tmp")
 	if err != nil {

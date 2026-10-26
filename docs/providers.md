@@ -282,6 +282,15 @@ GitLab `artifacts:when: always`, Azure `succeededOrFailed()`, Jenkins
   `${`) and `${git.sha}`. Reference other values in the script instead.
 - **GitLab `GIT_STRATEGY`** is set by Renvoy from the job's checkout steps, so a job
   `env` entry with that name is an error.
+- **YAML 1.1 parsers.** GitLab (Ruby Psych) and Bamboo (SnakeYAML) read YAML 1.1,
+  where `yes`, `off`, `12:30`, `1,000`, `<<`, and `:name` are not strings. Renvoy
+  double-quotes such values in every YAML file it writes, so they stay strings.
+- **GitHub matrix axes** named `include` or `exclude` are an error, since GitHub
+  reserves those keys. Variables and env entries named `GITHUB_*` or `RUNNER_*`
+  warn, because GitHub does not let workflows override its default variables.
+- **GitLab limits.** A job may need at most 50 jobs by default (`ci_max_needs`
+  on self-managed instances), so more is a warning; `parallel:matrix` creates
+  at most 200 jobs, so a larger matrix is an error.
 - **Jenkins environment names.** Jenkins assigns variables, job `env` entries, and
   bound secrets as Groovy identifiers in `environment { }`. Groovy keywords (`if`,
   `class`, `null`) and names of classes Groovy imports by default (`URL`, `UUID`,
@@ -342,6 +351,10 @@ extensions:
       windows: windows-2022
 ```
 
+Labels are Jenkins label expressions: labels (starting with a letter or digit)
+joined by `&&`, `||`, `!`, and parentheses. Malformed expressions are an error,
+because Jenkins would wait forever for an agent with a label no agent has.
+
 Job level: `agentLabel`, and `input` to gate a stage on approval:
 
 ```yaml
@@ -369,7 +382,7 @@ extensions:
     # Java Specs only:
     linkedRepository: acme-service
     specsVersion: 12.1.12         # must match the Bamboo server version
-    javaPackage: com.acme.specs
+    javaPackage: com.acme.specs   # not in a JDK namespace (java, javax, jdk, sun, ...)
     serverUrl: https://bamboo.example.com
 ```
 

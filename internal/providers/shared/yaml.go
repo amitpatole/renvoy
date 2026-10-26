@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"fmt"
 	"reflect"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -62,12 +63,45 @@ func Node(v any) *yaml.Node {
 }
 
 // Str returns a string scalar; multi-line strings use literal block style.
+// Strings that a YAML 1.1 parser would not read as strings are double-quoted.
 func Str(s string) *yaml.Node {
 	n := &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: s}
-	if strings.Contains(s, "\n") {
+	switch {
+	case strings.Contains(s, "\n"):
 		n.Style = yaml.LiteralStyle
+	case yaml11NonString(s):
+		n.Style = yaml.DoubleQuotedStyle
 	}
 	return n
+}
+
+// The encoder quotes strings that YAML 1.2 would resolve to another type, but
+// GitLab (Ruby Psych) and Bamboo (SnakeYAML) parse YAML 1.1, which also reads
+// yes/no/on/off as booleans, 12:30 and 1,000 as integers, spaced timestamps as
+// times, << and = as merge and value keys, and Psych reads :name as a symbol.
+var yaml11Patterns = []*regexp.Regexp{
+	regexp.MustCompile(`(?i)^(y|n|yes|no|on|off|true|false|null|~)$`),
+	regexp.MustCompile(`^[-+]?(\.[0-9]|[0-9_])[0-9_,:.]*([eE][-+]?[0-9]+)?$`),
+	regexp.MustCompile(`^[-+]?0[xXoObB][0-9a-fA-F_,]*$`),
+	regexp.MustCompile(`^[-+]?\.(inf|Inf|INF|nan|NaN|NAN)$`),
+	regexp.MustCompile(`^[0-9]{4}-[0-9]{1,2}-[0-9]{1,2}([Tt \t]|$)`),
+	regexp.MustCompile(`^(<<|=|:.*)$`),
+}
+
+func yaml11NonString(s string) bool {
+	for _, re := range yaml11Patterns {
+		if re.MatchString(s) {
+			return true
+		}
+	}
+	return false
+}
+
+// SetPlainKey is Set for a fixed key that the target reads as a string even
+// though YAML 1.1 would not (GitHub Actions' "on").
+func (m *Map) SetPlainKey(key string, v any) *Map {
+	m.n.Content = append(m.n.Content, &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: key}, Node(v))
+	return m
 }
 
 // Quoted returns a double-quoted string scalar.

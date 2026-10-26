@@ -393,7 +393,15 @@ func (e *env) initCmd() *cobra.Command {
 					return exitError{ExitUnsafeOverwrite}
 				}
 			}
-			if err := os.WriteFile(path, []byte(Starter), 0o644); err != nil {
+			if force {
+				backup, err := render.ReplaceWithBackup(path, []byte(Starter))
+				if err != nil {
+					return err
+				}
+				if backup != "" {
+					fmt.Fprintf(e.stderr, "%-9s %s -> %s\n", "backup", diagnostics.Sanitize(file), diagnostics.Sanitize(file+backup[len(path):]))
+				}
+			} else if err := os.WriteFile(path, []byte(Starter), 0o644); err != nil {
 				return err
 			}
 			fmt.Fprintf(e.stderr, "created %s\nnext: renvoy validate && renvoy generate --all --dry-run\n", diagnostics.Sanitize(file))

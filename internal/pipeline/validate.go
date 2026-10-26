@@ -96,7 +96,9 @@ func (v *validator) run() {
 	default:
 		v.errorf("kind", "unsupported kind %q", p.Kind).Hint = "the only supported kind is Pipeline"
 	}
-	v.checkName("metadata.name", p.Metadata.Name, "pipeline")
+	if v.checkName("metadata.name", p.Metadata.Name, "pipeline") && windowsDeviceRe.MatchString(p.Metadata.Name) {
+		v.errorf("metadata.name", "pipeline name %q is a reserved Windows device name, so generated files named after it cannot be checked out on Windows", p.Metadata.Name)
+	}
 	if len(p.Metadata.Labels) > MaxLabels {
 		v.errorf("metadata.labels", "%d labels are defined; at most %d are allowed", len(p.Metadata.Labels), MaxLabels)
 	}
@@ -251,6 +253,8 @@ func (v *validator) checkBudgets() {
 			Hint = "reference large values from a file in the repository instead"
 	}
 }
+
+var windowsDeviceRe = regexp.MustCompile(`^(con|prn|aux|nul|com[0-9]|lpt[0-9])$`)
 
 func (v *validator) checkName(path, name, what string) bool {
 	if name == "" {
@@ -516,8 +520,13 @@ func (v *validator) checkMatrix(path string, m Matrix, axes map[string]bool) {
 		return
 	}
 	combos := 1
+	folded := map[string]bool{}
 	for _, axis := range m {
 		ap := JoinKey(path, axis.Name)
+		if folded[strings.ToUpper(axis.Name)] {
+			v.errorf(ap, "matrix axis %q differs from another axis only by case", axis.Name)
+		}
+		folded[strings.ToUpper(axis.Name)] = true
 		v.checkEnvName(ap, axis.Name, "matrix axis")
 		if isControlEnvName(axis.Name) {
 			v.errorf(ap, "matrix axis %q would set an environment variable that changes how shells or tools behave", axis.Name)
@@ -550,8 +559,14 @@ func (v *validator) checkMatrix(path string, m Matrix, axes map[string]bool) {
 var matrixValueRe = regexp.MustCompile(`^[A-Za-z0-9._/][A-Za-z0-9._/-]{0,63}$`)
 
 func (v *validator) checkEnv(path string, env Vars, axes map[string]bool) {
+	folded := map[string]bool{}
 	for _, e := range env {
 		ep := JoinKey(path, e.Name)
+		// Windows and Azure Pipelines treat environment names case-insensitively.
+		if folded[strings.ToUpper(e.Name)] {
+			v.errorf(ep, "environment variable %q differs from another entry only by case", e.Name)
+		}
+		folded[strings.ToUpper(e.Name)] = true
 		v.checkEnvName(ep, e.Name, "environment variable")
 		if v.takenName(e.Name) || hasFold(axes, e.Name) {
 			d := v.errorf(ep, "environment variable %q shadows a variable, secret, or matrix axis of the same name", e.Name)
@@ -984,7 +999,18 @@ func (v *validator) checkImage(path, image string, axes map[string]bool) {
 	v.checkExpandedImage(path, image)
 }
 
-var expandedImageRe = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._/:@-]*$`)
+// imageRefRe is the Docker image reference grammar: an optional registry host,
+// lowercase path components, an optional tag, and an optional digest.
+var imageRefRe = func() *regexp.Regexp {
+	const (
+		domainPart = `(?:[a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9-]*[a-zA-Z0-9])`
+		domain     = domainPart + `(?:\.` + domainPart + `)*(?::[0-9]+)?`
+		pathPart   = `[a-z0-9]+(?:(?:[._]|__|-+)[a-z0-9]+)*`
+		tag        = `[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}`
+		digest     = `[A-Za-z][A-Za-z0-9]*(?:[-_+.][A-Za-z][A-Za-z0-9]*)*:[0-9a-fA-F]{32,}`
+	)
+	return regexp.MustCompile(`^(?:` + domain + `/)?` + pathPart + `(?:/` + pathPart + `)*(?::` + tag + `)?(?:@` + digest + `)?$`)
+}()
 
 // checkExpandedImage validates an image name with variable values substituted,
 // because some providers inline variables into image fields.
@@ -1005,8 +1031,8 @@ func (v *validator) checkExpandedImage(path, image string) {
 			b.WriteString("x")
 		}
 	}
-	if !expandedImageRe.MatchString(b.String()) {
+	if len(b.String()) > 255 || !imageRefRe.MatchString(b.String()) {
 		v.errorf(path, "image %q is not a valid image reference once variables are substituted (%q)", image, b.String()).
-			Hint = "use letters, digits, '.', '_', '/', ':', '@' and '-', starting with a letter or digit"
+			Hint = "use [registry/]lowercase/path[:tag][@sha256:digest], such as ghcr.io/acme/app:1.2"
 	}
 }

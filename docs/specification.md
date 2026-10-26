@@ -38,11 +38,18 @@ dependency graph, and naming rules that a schema cannot express.
 - **Names.** Pipeline, stage, and job names use lowercase letters, digits, and
   hyphens, start with a letter, and are at most 63 characters. Job names are
   unique across the whole pipeline and must differ from stage names. These rules
-  keep names valid as identifiers and file names on every provider.
+  keep names valid as identifiers and file names on every provider; for the same
+  reason a pipeline cannot be named after a Windows device (`con`, `prn`, `aux`,
+  `nul`, `com0`-`com9`, `lpt0`-`lpt9`).
 - **Variable names.** Variables, secrets, environment variables, and matrix axes
   use letters, digits, and underscores, start with a letter or underscore, and
   must not start with `RENVOY_` (reserved for generated bindings). Variable and
   secret names must be unique ignoring case, because Azure DevOps upper-cases them.
+  For the same reason, and because Windows environment names ignore case, the
+  entries of one `env` map and the axes of one matrix must differ by more than case.
+- **Image names** follow the Docker reference grammar once variables are
+  substituted: an optional registry host, lowercase path components, an optional
+  `:tag`, and an optional `@sha256:...` digest, at most 255 characters.
 - **Control variables.** Environment variables that change how shells, runtimes,
   or git behave (`BASH_ENV`, `ENV`, `PATH`, `LD_PRELOAD`, `NODE_OPTIONS`,
   `PYTHONSTARTUP`, `JAVA_TOOL_OPTIONS`, `GIT_SSH_COMMAND`, `GIT_CONFIG_*`, and
@@ -261,7 +268,7 @@ Custom blocks are kept with `--force`, and a structurally malformed custom block
 
 | Command | Description |
 | --- | --- |
-| `renvoy init [--file F] [--force]` | Write a commented starter `renvoy.yaml`. |
+| `renvoy init [--file F] [--force]` | Write a commented starter `renvoy.yaml`; `--force` saves an existing file as `.renvoy-backup` first. |
 | `renvoy validate [--file F] [--format text\|json]` | Validate without choosing a provider. |
 | `renvoy generate --provider P [--provider P2] [--output DIR] [--dry-run] [--force]` | Generate files. |
 | `renvoy generate --all [...]` | Generate for every provider; all are validated before anything is written. |

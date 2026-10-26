@@ -8,6 +8,8 @@ import (
 	"testing"
 	"time"
 
+	"go.yaml.in/yaml/v3"
+
 	"github.com/amitpatole/renvoy/internal/diagnostics"
 
 	"github.com/amitpatole/renvoy/internal/config"
@@ -314,5 +316,104 @@ stages:
 		if d.Severity == diagnostics.Error {
 			t.Fatalf("github-actions: %v", d)
 		}
+	}
+}
+
+// round14 compiles src and returns the diagnostics of one provider.
+func round14(t *testing.T, provider, src string) diagnostics.List {
+	t.Helper()
+	res := config.Compile([]byte(src), "renvoy.yaml", registry.Names())
+	if res.Pipeline == nil {
+		t.Fatalf("does not compile: %v", res.Diagnostics)
+	}
+	p, _ := registry.Get(provider)
+	return p.Validate(res.Pipeline)
+}
+
+func hasDiag(diags diagnostics.List, sev diagnostics.Severity, path, msg string) bool {
+	return slices.ContainsFunc(diags, func(d diagnostics.Diagnostic) bool {
+		return d.Severity == sev && d.Path == path && strings.Contains(d.Message, msg)
+	})
+}
+
+const round14Base = `apiVersion: renvoy.dev/v1alpha1
+kind: Pipeline
+metadata: {name: r14}
+triggers: {push: {}}
+extensions:
+  bamboo: {projectKey: PROJ, planKey: PLAN}
+stages:
+  - name: s
+    jobs:
+      - name: j
+        steps: [{run: echo MARKER}]
+`
+
+// Round 14: provider limits and reserved names the target platform enforces.
+func TestRound14ProviderRules(t *testing.T) {
+	job := func(extra string) string {
+		return strings.Replace(round14Base, "        steps:", extra+"        steps:", 1)
+	}
+	if d := round14(t, "github-actions", job("        matrix: {Include: [a, b], v: [x]}\n")); !hasDiag(d, diagnostics.Error, "stages[0].jobs[0].matrix.Include", "reserves the matrix key") {
+		t.Errorf("github include axis: %v", d)
+	}
+	if d := round14(t, "github-actions", job("        env: {GITHUB_SHA: x}\n")); !hasDiag(d, diagnostics.Warning, "stages[0].jobs[0].env.GITHUB_SHA", "GITHUB_*") {
+		t.Errorf("github default variable: %v", d)
+	}
+	var axes []string
+	for i := 0; i < 3; i++ {
+		axes = append(axes, fmt.Sprintf("a%d: [%s]", i, strings.Join(strings.Split("v1 v2 v3 v4 v5 v6", " "), ", ")))
+	}
+	if d := round14(t, "gitlab", job("        matrix: {"+strings.Join(axes, ", ")+"}\n")); !hasDiag(d, diagnostics.Error, "stages[0].jobs[0].matrix", "at most 200") {
+		t.Errorf("gitlab 216-job matrix: %v", d)
+	}
+	var wide strings.Builder
+	for i := 0; i < 51; i++ {
+		fmt.Fprintf(&wide, "      - name: w%d\n        steps: [{run: echo MARKER}]\n", i)
+	}
+	src := strings.Replace(round14Base, "      - name: j\n", wide.String()+"  - name: t\n    jobs:\n      - name: j\n", 1)
+	if d := round14(t, "gitlab", src); !hasDiag(d, diagnostics.Warning, "stages[1].jobs[0]", "needs 51 jobs") {
+		t.Errorf("gitlab needs limit: %v", d)
+	}
+	for _, pkg := range []string{"java.lang", "javax.sql", "jdk.internal", "com.sun.net", "org.w3c.dom", "java"} {
+		src := strings.Replace(round14Base, "planKey: PLAN}", "planKey: PLAN, javaPackage: "+pkg+"}", 1)
+		if d := round14(t, "bamboo-java", src); !hasDiag(d, diagnostics.Error, "extensions.bamboo.javaPackage", "namespace") {
+			t.Errorf("bamboo-java package %s: %v", pkg, d)
+		}
+	}
+	for label, ok := range map[string]bool{"linux": true, "linux && docker": true, "!windows && (x64 || arm-64)": true, "a.b_c-d": true,
+		"a &&": false, "a ||| b": false, "a)": false, "(a": false, "a & b": false, "a b": false, "!": false, "a && || b": false} {
+		src := strings.Replace(round14Base, "extensions:\n", "extensions:\n  jenkins: {agentLabel: \""+label+"\"}\n", 1)
+		d := round14(t, "jenkins", src)
+		if got := !hasDiag(d, diagnostics.Error, "extensions.jenkins.agentLabel", "invalid agent label"); got != ok {
+			t.Errorf("jenkins label %q: accepted=%v, want %v", label, got, ok)
+		}
+	}
+}
+
+// Round 14: Azure matrix leg names stay unique when values differ only by case.
+func TestAzureLegNamesIgnoreCase(t *testing.T) {
+	src := strings.Replace(round14Base, "        steps:", "        matrix: {ax: [A, a, a_2]}\n        steps:", 1)
+	res := config.Compile([]byte(src), "renvoy.yaml", registry.Names())
+	az, _ := registry.Get("azure-devops")
+	files, err := az.Render(context.Background(), res.Pipeline, providers.RenderOptions{SourceName: "renvoy.yaml"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var doc map[string]any
+	if err := yaml.Unmarshal(files[0].Content, &doc); err != nil {
+		t.Fatal(err)
+	}
+	seen := map[string]bool{}
+	for _, line := range strings.Split(string(files[0].Content), "\n") {
+		if name, ok := strings.CutSuffix(strings.TrimSpace(line), ":"); ok && strings.HasPrefix(name, "ax_") {
+			if seen[strings.ToLower(name)] {
+				t.Fatalf("leg %q repeats ignoring case:\n%s", name, files[0].Content)
+			}
+			seen[strings.ToLower(name)] = true
+		}
+	}
+	if len(seen) != 3 {
+		t.Fatalf("legs %v:\n%s", seen, files[0].Content)
 	}
 }

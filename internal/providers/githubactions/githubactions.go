@@ -162,6 +162,32 @@ func (pr *Provider) Validate(p *pipeline.Pipeline) diagnostics.List {
 			add(diagnostics.Errorf(pipeline.JoinIndex("secrets", i), "GitHub does not allow secret names starting with GITHUB_"))
 		}
 	}
+	defaultVar := func(path, name string) {
+		if up := strings.ToUpper(name); strings.HasPrefix(up, "GITHUB_") || strings.HasPrefix(up, "RUNNER_") {
+			add(diagnostics.Warningf(path, "GitHub does not let workflows override default variables named GITHUB_* or RUNNER_*, so %q may be ignored", name).
+				WithHint("rename it"))
+		}
+	}
+	for _, v := range p.Variables {
+		defaultVar(pipeline.JoinKey("variables", v.Name), v.Name)
+	}
+	for _, j := range p.AllJobs() {
+		for _, e := range j.Env {
+			defaultVar(pipeline.JoinKey(j.Path()+".env", e.Name), e.Name)
+		}
+		for _, s := range j.Steps {
+			for _, e := range s.Env {
+				defaultVar(pipeline.JoinKey(s.Path()+".env", e.Name), e.Name)
+			}
+		}
+		for _, axis := range j.Matrix {
+			if strings.EqualFold(axis.Name, "include") || strings.EqualFold(axis.Name, "exclude") {
+				add(diagnostics.Errorf(pipeline.JoinKey(j.Path()+".matrix", axis.Name),
+					"GitHub Actions reserves the matrix key %q for lists of combinations", strings.ToLower(axis.Name)).
+					WithHint("rename the axis"))
+			}
+		}
+	}
 	for i := range p.Triggers.Schedules {
 		add(diagnostics.Warningf(pipeline.JoinIndex("triggers.schedules", i),
 			"GitHub runs scheduled workflows only on the default branch; the branches list is not enforced").
@@ -199,7 +225,7 @@ func (pr *Provider) Render(_ context.Context, p *pipeline.Pipeline, _ providers.
 	r := &renderer{p: p, cfg: cfg, artifacts: compiler.Artifacts(p)}
 	root := shared.NewMap()
 	root.Set("name", p.Metadata.Name)
-	root.Set("on", r.triggers())
+	root.SetPlainKey("on", r.triggers())
 
 	perms := shared.NewMap()
 	if cfg.ext.Permissions != nil {

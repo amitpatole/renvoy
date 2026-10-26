@@ -52,7 +52,10 @@ var (
 	// reservedRoots are top-level YAML Specs keys that jobs cannot use as names.
 	reservedRoots = map[string]bool{"version": true, "plan": true, "docker": true, "repositories": true,
 		"triggers": true, "notifications": true, "variables": true, "branches": true, "dependencies": true,
-		"branch-overrides": true, "other": true, "stages": true, "labels": true}
+		"branch-overrides": true, "other": true, "stages": true, "labels": true, "deployment": true,
+		"environments": true, "release-naming": true, "plan-permissions": true, "permissions": true}
+	// jdkPackages are package namespaces owned by JDK modules.
+	jdkPackages  = []string{"java", "javax", "jdk", "sun", "com.sun", "org.w3c", "org.xml", "org.ietf", "netscape"}
 	javaKeywords = map[string]bool{"abstract": true, "assert": true, "boolean": true, "break": true, "byte": true,
 		"case": true, "catch": true, "char": true, "class": true, "const": true, "continue": true, "default": true,
 		"do": true, "double": true, "else": true, "enum": true, "extends": true, "final": true, "finally": true,
@@ -165,6 +168,13 @@ func decode(p *pipeline.Pipeline, provider string) (extension, diagnostics.List)
 		}
 		if !ok {
 			diags = append(diags, diagnostics.Errorf(path+".javaPackage", "invalid Java package %q", ext.JavaPackage))
+		}
+		for _, ns := range jdkPackages {
+			if ext.JavaPackage == ns || strings.HasPrefix(ext.JavaPackage, ns+".") {
+				diags = append(diags, diagnostics.Errorf(path+".javaPackage", "Java package %q is in the JDK's %s namespace, which application code cannot use", ext.JavaPackage, ns).
+					WithHint("use a package under your own domain, such as com.example.bamboo"))
+				break
+			}
 		}
 	}
 	if ext.ServerURL != "" && !urlRe.MatchString(ext.ServerURL) {

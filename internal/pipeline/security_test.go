@@ -465,3 +465,29 @@ func TestOrderedMapsAreBounded(t *testing.T) {
 		t.Fatalf("expected the entry limit:\n%s", render(diags))
 	}
 }
+
+// Round 14: names that collide ignoring case, image references outside the
+// Docker grammar, and Windows device names are rejected.
+func TestRound14PortableNames(t *testing.T) {
+	cases := []struct{ old, new, path, msg string }{
+		{"        steps:\n", "        env: {Foo: a, FOO: b}\n        steps:\n", "stages[0].jobs[0].env.FOO", "only by case"},
+		{"        steps:\n", "        matrix: {ax: [a], AX: [b]}\n        steps:\n", "stages[0].jobs[0].matrix.AX", "only by case"},
+		{"  name: demo", "  name: nul", "metadata.name", "reserved Windows device name"},
+	}
+	for _, c := range cases {
+		_, diags := parse(t, strings.Replace(minimal, c.old, c.new, 1))
+		expectError(t, diags, c.path, c.msg)
+	}
+	for _, image := range []string{"Foo:1", "a//b", "a:", "a@", "a:b:c", "app:-1", "UPPER/Path"} {
+		src := strings.Replace(minimal, "        steps:\n", "        container: {image: \""+image+"\"}\n        steps:\n", 1)
+		_, diags := parse(t, src)
+		expectError(t, diags, "stages[0].jobs[0].container.image", "not a valid image reference")
+	}
+	for _, image := range []string{"python:3.12-slim", "ghcr.io/acme/app:1.2", "localhost:5000/a/b", "Registry.Example.com/team/app",
+		"mcr.microsoft.com/dotnet/sdk:8.0", "alpine@sha256:" + strings.Repeat("ab", 32), "a__b/c-d.e:Tag_1"} {
+		src := strings.Replace(minimal, "        steps:\n", "        container: {image: \""+image+"\"}\n        steps:\n", 1)
+		if _, diags := parse(t, src); diags.HasErrors() {
+			t.Errorf("%s rejected:\n%s", image, render(diags))
+		}
+	}
+}

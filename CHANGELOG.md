@@ -147,3 +147,16 @@ All notable changes to this project are documented here. The format follows
   names such as `URL` or `UUID`), instead of writing a Jenkinsfile that fails to
   compile. The 584 class names were listed from JDK 21 and Groovy 4 and each was
   confirmed with the Groovy compiler.
+- Strings that YAML 1.1 parsers do not read as strings (`yes`, `off`, `12:30`,
+  `1,000`, spaced timestamps, `<<`, `:name`) are double-quoted in generated
+  YAML. GitLab's Psych read a variable value `yes` as `true` and `12:30` as
+  45000, and SnakeYAML failed on `<<`; both now read every value as a string.
+- GitHub rejects matrix axes named `include` or `exclude` and warns on variables
+  named `GITHUB_*` or `RUNNER_*`; GitLab rejects matrices over 200 jobs and warns
+  above 50 needs; Bamboo Java Specs rejects packages in JDK namespaces; Jenkins
+  parses agent label expressions instead of checking their characters (`a &&`
+  was accepted, `!windows` was rejected).
+- Image names follow the Docker reference grammar; `env` entries and matrix axes
+  that differ only by case are rejected; Azure matrix legs stay unique ignoring
+  case; pipelines cannot be named after Windows devices; more Bamboo root keys
+  are reserved for job names; `init --force` keeps a `.renvoy-backup` copy.

@@ -155,8 +155,16 @@ func (pr *Provider) Validate(p *pipeline.Pipeline) diagnostics.List {
 	diags = append(diags, extDiags...)
 	add := func(d diagnostics.Diagnostic) { diags = append(diags, d.WithProvider(Name)) }
 
+	artifacts := compiler.Artifacts(p)
 	for _, j := range p.AllJobs() {
 		jp := j.Path()
+		if n := len(needsOf(p, artifacts, j)); n > maxNeeds {
+			add(diagnostics.Warningf(jp, "the job needs %d jobs; GitLab allows %d by default (ci_max_needs on self-managed instances)", n, maxNeeds).
+				WithHint("reduce the jobs in the stages it depends on, or raise the limit on your instance"))
+		}
+		if n := len(j.Matrix.Combinations()); len(j.Matrix) > 0 && n > maxMatrixJobs {
+			add(diagnostics.Errorf(jp+".matrix", "the matrix expands to %d jobs; GitLab parallel:matrix allows at most %d", n, maxMatrixJobs))
+		}
 		if slices.Contains(reservedKeys, j.Name) {
 			add(diagnostics.Infof(jp+".name", "%q is a reserved GitLab CI keyword, so the job is named %q", j.Name, jobKey(j)))
 		}
@@ -402,19 +410,39 @@ func producesArtifacts(j *pipeline.Job) bool {
 	return false
 }
 
-func (r *renderer) needs(j *pipeline.Job) any {
-	downloads := map[*pipeline.Job]bool{}
-	for _, s := range j.Steps {
-		if s.DownloadArtifact != nil {
-			downloads[r.artifacts[s.DownloadArtifact.Name].Producer] = true
-		}
-	}
+// GitLab's default limit on needs entries, and its hard limit on jobs from one
+// parallel:matrix.
+const (
+	maxNeeds      = 50
+	maxMatrixJobs = 200
+)
+
+// needsOf lists the jobs j needs: its direct dependencies, then the producers
+// of artifacts it downloads.
+func needsOf(p *pipeline.Pipeline, artifacts map[string]compiler.Artifact, j *pipeline.Job) []*pipeline.Job {
+	downloads := downloadsOf(artifacts, j)
 	needs := append([]*pipeline.Job{}, j.Needs...)
-	for _, x := range r.p.OrderedJobs() {
+	for _, x := range p.OrderedJobs() {
 		if downloads[x] && !slices.Contains(needs, x) {
 			needs = append(needs, x)
 		}
 	}
+	return needs
+}
+
+func downloadsOf(artifacts map[string]compiler.Artifact, j *pipeline.Job) map[*pipeline.Job]bool {
+	downloads := map[*pipeline.Job]bool{}
+	for _, s := range j.Steps {
+		if s.DownloadArtifact != nil {
+			downloads[artifacts[s.DownloadArtifact.Name].Producer] = true
+		}
+	}
+	return downloads
+}
+
+func (r *renderer) needs(j *pipeline.Job) any {
+	downloads := downloadsOf(r.artifacts, j)
+	needs := needsOf(r.p, r.artifacts, j)
 	plain := true
 	for _, n := range needs {
 		if producesArtifacts(n) && !downloads[n] {

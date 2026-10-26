@@ -396,7 +396,7 @@ func stepRefs(s *pipeline.Step) []pipeline.Ref {
 // e.g. python_3_11.
 func matrixNames(axes pipeline.Matrix, combos [][]string) []string {
 	names := make([]string, len(combos))
-	seen := map[string]int{}
+	used := map[string]bool{}
 	for i, c := range combos {
 		var parts []string
 		for k, v := range c {
@@ -408,10 +408,12 @@ func matrixNames(axes pipeline.Matrix, combos [][]string) []string {
 			}
 			return '_'
 		}, strings.Join(parts, "_"))
-		seen[name]++
-		if seen[name] > 1 {
-			name = fmt.Sprintf("%s_%d", name, seen[name])
+		// Azure compares leg names ignoring case.
+		base := name
+		for n := 2; used[strings.ToLower(name)]; n++ {
+			name = fmt.Sprintf("%s_%d", base, n)
 		}
+		used[strings.ToLower(name)] = true
 		names[i] = name
 	}
 	return names

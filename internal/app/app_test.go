@@ -403,3 +403,22 @@ func TestPartialWriteIsReported(t *testing.T) {
 		t.Fatalf("stderr: %s", r.stderr)
 	}
 }
+
+// Round 14: init --force keeps the replaced file as a backup, with its permissions.
+func TestInitForceBacksUp(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "renvoy.yaml")
+	writeFile(t, path, "hand-written\n")
+	if err := os.Chmod(path, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	r := run(t, dir, "init", "--force")
+	expectCode(t, r, app.ExitOK)
+	old, err := os.ReadFile(path + ".renvoy-backup")
+	if err != nil || string(old) != "hand-written\n" || !strings.Contains(r.stderr, "backup    renvoy.yaml -> renvoy.yaml.renvoy-backup") {
+		t.Fatalf("backup %q %v\n%s", old, err, r.stderr)
+	}
+	if info, _ := os.Stat(path); runtime.GOOS != "windows" && info.Mode().Perm() != 0o600 {
+		t.Fatalf("mode %v", info.Mode().Perm())
+	}
+}

@@ -104,7 +104,7 @@ type config struct {
 }
 
 var (
-	labelRe     = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9 ._&|()!-]*$`)
+	labelRe     = regexp.MustCompile(`^[A-Za-z0-9 ._&|()!-]+$`)
 	submitterRe = regexp.MustCompile(`^[A-Za-z0-9._@-]+(?:,[A-Za-z0-9._@-]+)*$`)
 )
 
@@ -114,7 +114,7 @@ func decode(p *pipeline.Pipeline) (config, diagnostics.List) {
 	if n := p.Extensions.Get(Name); n != nil {
 		path := pipeline.JoinKey("extensions", Name)
 		diags = append(diags, pipeline.DecodeStrict(n, &cfg.ext, path, nil)...)
-		if cfg.ext.AgentLabel != "" && !labelRe.MatchString(cfg.ext.AgentLabel) {
+		if cfg.ext.AgentLabel != "" && !validLabel(cfg.ext.AgentLabel) {
 			diags = append(diags, diagnostics.Errorf(path+".agentLabel", "invalid agent label expression %q", cfg.ext.AgentLabel))
 		}
 		for _, os := range sortedKeys(cfg.ext.AgentLabels) {
@@ -122,7 +122,7 @@ func decode(p *pipeline.Pipeline) (config, diagnostics.List) {
 			if os != pipeline.OSLinux && os != pipeline.OSWindows && os != pipeline.OSMacOS {
 				diags = append(diags, diagnostics.Errorf(lp, "unknown runner %q", os).WithHint("use linux, windows, or macos"))
 			}
-			if !labelRe.MatchString(cfg.ext.AgentLabels[os]) {
+			if !validLabel(cfg.ext.AgentLabels[os]) {
 				diags = append(diags, diagnostics.Errorf(lp, "invalid agent label expression %q", cfg.ext.AgentLabels[os]))
 			}
 		}
@@ -135,7 +135,7 @@ func decode(p *pipeline.Pipeline) (config, diagnostics.List) {
 		path := pipeline.JoinKey(j.Path()+".extensions", Name)
 		var je jobExtension
 		diags = append(diags, pipeline.DecodeStrict(n, &je, path, nil)...)
-		if je.AgentLabel != "" && !labelRe.MatchString(je.AgentLabel) {
+		if je.AgentLabel != "" && !validLabel(je.AgentLabel) {
 			diags = append(diags, diagnostics.Errorf(path+".agentLabel", "invalid agent label expression %q", je.AgentLabel))
 		}
 		if in := je.Input; in != nil {
@@ -796,4 +796,90 @@ func sortedKeys[V any](m map[string]V) []string {
 	}
 	sort.Strings(keys)
 	return keys
+}
+
+// validLabel reports whether s is a Jenkins label expression Renvoy can emit:
+// labels joined by &&, ||, !, and parentheses. Jenkins parses anything else
+// into a label no agent has, so the build would wait forever.
+func validLabel(s string) bool {
+	if !labelRe.MatchString(s) {
+		return false
+	}
+	var toks []string
+	for i := 0; i < len(s); {
+		switch c := s[i]; {
+		case c == ' ':
+			i++
+		case strings.HasPrefix(s[i:], "&&"), strings.HasPrefix(s[i:], "||"):
+			toks = append(toks, s[i:i+2])
+			i += 2
+		case c == '!' || c == '(' || c == ')':
+			toks = append(toks, s[i:i+1])
+			i++
+		case c == '&' || c == '|':
+			return false
+		default:
+			if !isAlnum(c) {
+				return false
+			}
+			j := i
+			for j < len(s) && strings.IndexByte(" &|!()", s[j]) < 0 {
+				j++
+			}
+			toks = append(toks, "a")
+			i = j
+		}
+	}
+	pos := 0
+	var or, and, unary func() bool
+	or = func() bool {
+		if !and() {
+			return false
+		}
+		for pos < len(toks) && toks[pos] == "||" {
+			pos++
+			if !and() {
+				return false
+			}
+		}
+		return true
+	}
+	and = func() bool {
+		if !unary() {
+			return false
+		}
+		for pos < len(toks) && toks[pos] == "&&" {
+			pos++
+			if !unary() {
+				return false
+			}
+		}
+		return true
+	}
+	unary = func() bool {
+		if pos >= len(toks) {
+			return false
+		}
+		switch toks[pos] {
+		case "!":
+			pos++
+			return unary()
+		case "(":
+			pos++
+			if !or() || pos >= len(toks) || toks[pos] != ")" {
+				return false
+			}
+			pos++
+			return true
+		case "a":
+			pos++
+			return true
+		}
+		return false
+	}
+	return or() && pos == len(toks)
+}
+
+func isAlnum(c byte) bool {
+	return c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9'
 }
