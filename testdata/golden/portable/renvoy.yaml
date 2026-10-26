@@ -1,0 +1,107 @@
+# Uses only concepts every built-in provider can express.
+apiVersion: renvoy.dev/v1alpha1
+kind: Pipeline
+
+metadata:
+  name: portable-app
+  description: Exercises every portable concept that all four providers support.
+
+triggers:
+  push:
+    branches: [main, release/*]
+    tags: [v*]
+  pullRequest:
+    branches: [main]
+  manual: {}
+  schedules:
+    - cron: "0 3 * * 1"
+      branches: [main]
+
+variables:
+  IMAGE: registry.example.com/acme/portable-app
+  PYTHONUNBUFFERED: "1"
+
+secrets:
+  - REGISTRY_TOKEN
+  - KUBE_CONFIG
+
+stages:
+  - name: test
+    jobs:
+      - name: unit
+        timeoutMinutes: 20
+        container:
+          image: python:${matrix.python}
+        matrix:
+          python: ["3.11", "3.12"]
+        env:
+          PIP_DISABLE_PIP_VERSION_CHECK: "1"
+        steps:
+          - uses: checkout
+          - run: |
+              pip install -r requirements.txt
+              pytest --junitxml=reports/junit-${matrix.python}.xml
+          - publishTestResults:
+              path: reports/*.xml
+
+      - name: lint
+        steps:
+          - uses: checkout
+          - name: Lint sources
+            run: make lint
+            workingDirectory: src/
+            env:
+              LINT_STRICT: "true"
+
+      - name: windows-smoke
+        runsOn: windows
+        steps:
+          - uses: checkout
+          - run: Write-Output "branch $env:USERNAME"
+          - run: ./scripts/smoke.ps1 -Branch ${git.branch}
+
+  - name: build
+    jobs:
+      - name: package
+        steps:
+          - uses: checkout
+          - run: make dist
+          - uploadArtifact:
+              name: dist
+              paths: [dist/]
+
+      - name: image
+        dependsOn: [package]
+        when:
+          branches: [main, release/*]
+        steps:
+          - uses: checkout
+          - downloadArtifact:
+              name: dist
+          - buildImage:
+              context: .
+              dockerfile: build/Dockerfile
+              image: ${variables.IMAGE}:${git.sha}
+              buildArgs:
+                REVISION: ${git.sha}
+          - run: echo "${secrets.REGISTRY_TOKEN}" | docker login registry.example.com -u ci --password-stdin
+          - pushImage:
+              image: ${variables.IMAGE}:${git.sha}
+
+  - name: deploy
+    dependsOn: [build]
+    when:
+      branches: [main]
+      events: [push, manual]
+    jobs:
+      - name: production
+        environment:
+          name: production
+          url: https://app.example.com
+        timeoutMinutes: 15
+        steps:
+          - uses: checkout
+          - run: printf '%s' "${secrets.KUBE_CONFIG}" > kubeconfig
+          - deployKubernetes:
+              manifests: deploy/k8s/
+              namespace: production

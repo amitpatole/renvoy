@@ -1,0 +1,10 @@
+warning renvoy.yaml:20:3 extensions.circleci:
+  unknown extension namespace "circleci" is ignored by every provider
+  hint: known namespaces: github-actions
+
+error [github-actions] renvoy.yaml:27:9 stages[0].jobs[0].retries:
+  GitHub Actions cannot express jobs.retries
+  hint: GitHub Actions cannot retry jobs; retry inside the step script or remove retries
+
+info [github-actions] renvoy.yaml:58:11 stages[1].jobs[0].environment.approvals:
+  jobs.environment.approvals is configured outside the generated file: add required reviewers to the environment in the repository settings

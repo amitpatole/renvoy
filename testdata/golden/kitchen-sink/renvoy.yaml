@@ -1,0 +1,61 @@
+# Uses concepts that only some providers can express, so the diagnostics
+# goldens cover each adapter's capability errors.
+apiVersion: renvoy.dev/v1alpha1
+kind: Pipeline
+
+metadata:
+  name: kitchen-sink
+
+triggers:
+  push: {}
+
+secrets:
+  - NPM_TOKEN
+
+extensions:
+  github-actions:
+    permissions:
+      contents: read
+      id-token: write
+  circleci:
+    resource_class: large
+
+stages:
+  - name: build
+    jobs:
+      - name: node
+        retries: 2
+        container:
+          image: node:22
+          options: --cpus 2
+        steps:
+          - uses: checkout
+          - cache:
+              key: npm
+              files: [package-lock.json]
+              paths: [.npm/]
+          - uses: actions/setup-node@v4
+            with:
+              node-version: "22"
+              registry-url: https://registry.npmjs.org
+          - run: npm ci --cache .npm
+            env:
+              NODE_AUTH_TOKEN: ${secrets.NPM_TOKEN}
+          - name: Nightly-only audit
+            run: npm audit
+            when:
+              events: [schedule]
+        extensions:
+          github-actions:
+            runsOn: [self-hosted, linux, x64]
+
+  - name: release
+    jobs:
+      - name: publish
+        runsOn: macos
+        environment:
+          name: production
+          approvals:
+            required: true
+        steps:
+          - run: ./release.sh
