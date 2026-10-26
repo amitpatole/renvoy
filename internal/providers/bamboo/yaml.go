@@ -121,7 +121,10 @@ func (pr *YAMLProvider) Render(_ context.Context, p *pipeline.Pipeline, _ provid
 	}
 	content := "---\n" + string(body) + "\n" + render.CustomBlock(providers.CommentHash, "")
 	return []providers.GeneratedFile{{Path: "bamboo-specs/bamboo.yaml", Content: []byte(content),
-		Comment: providers.CommentHash, YAML: true}}, nil
+		Comment: providers.CommentHash, YAML: true,
+		CustomKeys: providers.CustomKeyPolicy{Denied: []string{"version", "server-name", "plan", "stages", "docker",
+			"variables", "triggers", "branches", "branch-overrides", "dependencies", "repositories", "other",
+			"plan-permissions"}}}}, nil
 }
 
 func conditions(branches []string) []*shared.Map {

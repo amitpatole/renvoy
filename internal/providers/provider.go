@@ -52,6 +52,18 @@ type GeneratedFile struct {
 	CommentEnd string
 	// YAML marks content that must remain valid YAML after custom blocks are spliced in.
 	YAML bool
+	// CustomKeys limits the top-level keys a YAML custom block may add. Keys that
+	// apply to every generated job (global defaults, environment, includes) would
+	// change generated behavior while leaving generated sections untouched.
+	CustomKeys CustomKeyPolicy
+}
+
+// CustomKeyPolicy restricts top-level keys in YAML custom blocks.
+type CustomKeyPolicy struct {
+	// Allowed, when set, lists the only keys a custom block may add.
+	Allowed []string
+	// Denied lists keys a custom block may not add.
+	Denied []string
 }
 
 // Support describes how a provider handles a portable concept.

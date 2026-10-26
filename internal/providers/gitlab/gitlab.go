@@ -258,7 +258,8 @@ func (pr *Provider) Render(_ context.Context, p *pipeline.Pipeline, _ providers.
 	}
 	body = append(body, '\n')
 	body = append(body, render.CustomBlock(providers.CommentHash, "")...)
-	return []providers.GeneratedFile{{Path: ".gitlab-ci.yml", Content: body, Comment: providers.CommentHash, YAML: true}}, nil
+	return []providers.GeneratedFile{{Path: ".gitlab-ci.yml", Content: body, Comment: providers.CommentHash, YAML: true,
+		CustomKeys: providers.CustomKeyPolicy{Denied: append([]string{"spec"}, reservedKeys...)}}}, nil
 }
 
 type renderer struct {

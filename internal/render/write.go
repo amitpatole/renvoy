@@ -31,6 +31,8 @@ type Planned struct {
 	Content  []byte
 	Existing []byte // nil when the file does not exist
 	Action   Action
+
+	comment, commentEnd string
 }
 
 // Conflict explains why a file cannot be written safely.
@@ -41,6 +43,23 @@ type Conflict struct {
 }
 
 func (c Conflict) Error() string { return c.Path + ": " + c.Reason }
+
+// CustomLines counts non-placeholder lines inside a planned file's custom block.
+func CustomLines(p Planned) int {
+	st := style{p.comment, p.commentEnd}
+	lines, ok, err := ExtractCustom(p.Content, st)
+	if err != nil || !ok {
+		return 0
+	}
+	placeholder := st.line("Provider-specific content retained during regeneration.")
+	n := 0
+	for _, l := range lines {
+		if t := strings.TrimSpace(l); t != "" && t != placeholder {
+			n++
+		}
+	}
+	return n
+}
 
 // MaxExistingSize bounds how much of an existing target file is read.
 const MaxExistingSize = 4 << 20
@@ -74,7 +93,7 @@ func Plan(root string, files []providers.GeneratedFile, source string, force boo
 			}
 			return nil, nil, err
 		}
-		p := Planned{Path: f.Path, Abs: abs, Content: content, Existing: existing}
+		p := Planned{Path: f.Path, Abs: abs, Content: content, Existing: existing, comment: f.Comment, commentEnd: f.CommentEnd}
 		switch {
 		case existing == nil:
 			p.Action = Create

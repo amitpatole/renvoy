@@ -207,11 +207,24 @@ Custom content may only add to a file:
 - **YAML:** new top-level keys only (compared ignoring case), as one document,
   without anchors, aliases, merge keys (`<<`), or explicit tags. Different YAML
   parsers resolve those differently, so they could change a generated job in the
-  provider's eyes while looking unchanged to Renvoy.
+  provider's eyes while looking unchanged to Renvoy. Keys must be plain names, not
+  YAML 1.1 booleans or nulls (`yes`, `on`, `null`). Keys that apply to every
+  generated job are refused: GitHub custom blocks may only add `concurrency` and
+  `run-name`; Azure only `name`, `lockBehavior`, and `appendCommitMessageToRunName`;
+  GitLab refuses global keywords such as `default`, `include`, `variables`, and
+  `image` (new jobs are fine); Bamboo refuses plan-wide keys such as `docker`,
+  `variables`, `triggers`, `branches`, and `branch-overrides`.
 - **Jenkinsfile and Java Specs:** balanced code without `\u` escapes and without a
   bare `/` outside strings and comments (division, regular expression literals,
-  and Groovy slashy strings), whose extent the check cannot determine.
-- **pom.xml:** well-formed elements.
+  and Groovy slashy strings), whose extent the check cannot determine. Jenkinsfile
+  custom code may not use `${...}` interpolation; use concatenation.
+- **pom.xml:** well-formed elements, without DOCTYPE, ENTITY, or processing
+  instructions.
+- **Every format:** no carriage returns or Unicode line separators (NEL, LS, PS),
+  which some parsers treat as line breaks and others do not.
+
+`renvoy diff` notes each file whose custom block holds content, because that
+content is preserved but not described by `renvoy.yaml`.
 
 Content that would change the generated part, or a near-miss marker, is refused.
 

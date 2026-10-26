@@ -78,3 +78,12 @@ All notable changes to this project are documented here. The format follows
 - More names that select programs, flags, or credential files (`MAKEFLAGS`, `CC`,
   `*_FILE`, `*_ARGS`, `*_WRAPPER`, `TF_*`, `AWS_*`, and others) reject
   `${git.branch}`.
+- Custom blocks may not add top-level keys that apply to every generated job
+  (GitHub `env`/`defaults`, GitLab `default`/`include`, Azure `pool`/`extends`,
+  Bamboo `docker`/`branch-overrides`, and others), nor YAML 1.1 boolean or null
+  keys.
+- Custom content may not contain carriage returns or NEL/LS/PS line separators
+  (javac ends a `//` comment at a lone CR, which hid a closing brace), Jenkinsfile
+  custom code may not use `${...}` interpolation, and pom.xml custom content may
+  not contain DOCTYPE, ENTITY, or processing instructions.
+- `renvoy diff` notes files whose custom block holds content.

@@ -341,6 +341,11 @@ func (e *env) diffCmd() *cobra.Command {
 				// their control characters to the terminal raw.
 				fmt.Fprint(e.stdout, diagnostics.SanitizeText(render.UnifiedDiff(from, "b/"+p.Path, p.Existing, p.Content)))
 			}
+			for _, p := range planned {
+				if n := render.CustomLines(p); n > 0 {
+					fmt.Fprintf(e.stderr, "note: %s has %d line(s) of custom content, which renvoy.yaml does not describe\n", p.Path, n)
+				}
+			}
 			if changed {
 				return exitError{ExitDiffFound}
 			}

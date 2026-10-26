@@ -239,6 +239,9 @@ func (pr *Provider) Render(_ context.Context, p *pipeline.Pipeline, _ providers.
 		Content: body,
 		Comment: providers.CommentHash,
 		YAML:    true,
+		// Every other top-level key (env, defaults, permissions, on) applies to the
+		// generated jobs; jobs cannot be added because "jobs" is generated.
+		CustomKeys: providers.CustomKeyPolicy{Allowed: []string{"concurrency", "run-name"}},
 	}}, nil
 }
 

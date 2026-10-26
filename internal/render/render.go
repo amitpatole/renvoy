@@ -10,8 +10,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"path"
 	"reflect"
 	"regexp"
+	"slices"
 	"strings"
 
 	"go.yaml.in/yaml/v3"
@@ -248,6 +250,12 @@ func Finalize(f providers.GeneratedFile, source string, existing []byte) ([]byte
 // checkCustom makes sure custom content can only add to a generated file, never
 // change the generated part, so renvoy.yaml stays an accurate description of it.
 func checkCustom(f providers.GeneratedFile, generated, combined []byte, custom []string) error {
+	text := strings.Join(custom, "\n")
+	// Java, Groovy, and YAML 1.1 parsers treat these as line breaks; the checks
+	// below split on \n only, so they could hide a line from them.
+	if i := strings.IndexAny(text, "\r\u0085\u2028\u2029"); i >= 0 {
+		return fmt.Errorf("the custom block contains the line terminator %q, which parsers disagree on", []rune(text[i:])[0])
+	}
 	switch {
 	case f.YAML:
 		if err := singleYAMLDocument(combined); err != nil {
@@ -265,10 +273,14 @@ func checkCustom(f providers.GeneratedFile, generated, combined []byte, custom [
 				return fmt.Errorf("the custom block changes the generated %q section; custom YAML may only add new top-level keys", k)
 			}
 		}
-		if err := plainCustomYAML(strings.Join(custom, "\n"), gen); err != nil {
+		if err := plainCustomYAML(text, gen, f.CustomKeys); err != nil {
 			return err
 		}
 	case f.Comment == providers.CommentXML:
+		lower := strings.ToLower(text)
+		if strings.Contains(lower, "<!doctype") || strings.Contains(lower, "<!entity") || strings.Contains(text, "<?") {
+			return errors.New("the custom block may not contain DOCTYPE, ENTITY, or processing instructions")
+		}
 		dec := xml.NewDecoder(strings.NewReader("<custom>" + strings.Join(custom, "\n") + "</custom>"))
 		dec.Strict = true
 		for {
@@ -285,6 +297,11 @@ func checkCustom(f providers.GeneratedFile, generated, combined []byte, custom [
 		if strings.Contains(code, `\u`) {
 			return errors.New(`the custom block contains a \u escape, which the compiler decodes before reading the code`)
 		}
+		// Groovy interpolation (${...}) is code inside a string, which the bracket
+		// check treats as text.
+		if path.Base(f.Path) == "Jenkinsfile" && strings.Contains(code, "${") {
+			return errors.New("the custom block uses ${...} string interpolation; use concatenation such as 'x' + env.NAME")
+		}
 		if err := balanced(code); err != nil {
 			return fmt.Errorf("the custom block could change the generated code around it: %w", err)
 		}
@@ -295,7 +312,7 @@ func checkCustom(f providers.GeneratedFile, generated, combined []byte, custom [
 // plainCustomYAML rejects YAML features that different parsers resolve
 // differently (merge keys, anchors, aliases, explicit tags) and top-level keys
 // that collide, ignoring case, with generated ones.
-func plainCustomYAML(custom string, generated map[string]any) error {
+func plainCustomYAML(custom string, generated map[string]any, policy providers.CustomKeyPolicy) error {
 	var doc yaml.Node
 	if err := yaml.Unmarshal([]byte(custom), &doc); err != nil {
 		return fmt.Errorf("the custom block is not valid YAML on its own: %w", err)
@@ -330,15 +347,36 @@ func plainCustomYAML(custom string, generated map[string]any) error {
 	if len(doc.Content) == 1 && doc.Content[0].Kind == yaml.MappingNode {
 		top := doc.Content[0]
 		for i := 0; i+1 < len(top.Content); i += 2 {
+			key := top.Content[i].Value
+			if !customKeyRe.MatchString(key) || yaml11Special[strings.ToLower(key)] {
+				return fmt.Errorf("the custom block key %q must be a plain name; YAML 1.1 parsers may read it as a boolean, null, or number", key)
+			}
 			for k := range generated {
-				if strings.EqualFold(k, top.Content[i].Value) {
+				if strings.EqualFold(k, key) {
 					return fmt.Errorf("the custom block redefines the generated %q key", k)
+				}
+			}
+			if len(policy.Allowed) > 0 && !slices.Contains(policy.Allowed, key) {
+				return fmt.Errorf("the custom block key %q would apply to the generated jobs; this file's custom block may only add %s",
+					key, strings.Join(policy.Allowed, ", "))
+			}
+			for _, d := range policy.Denied {
+				if strings.EqualFold(d, key) {
+					return fmt.Errorf("the custom block key %q would apply to the generated jobs; set it in renvoy.yaml instead", key)
 				}
 			}
 		}
 	}
 	return nil
 }
+
+// customKeyRe restricts custom top-level keys to plain names (job names may use
+// spaces, dots, and colons).
+var customKeyRe = regexp.MustCompile(`^[A-Za-z_.][A-Za-z0-9_.: -]*$`)
+
+// yaml11Special lists plain scalars YAML 1.1 parsers resolve to non-strings.
+var yaml11Special = map[string]bool{"y": true, "yes": true, "n": true, "no": true, "on": true, "off": true,
+	"true": true, "false": true, "null": true, "~": true}
 
 // singleYAMLDocument parses b and requires exactly one document.
 func singleYAMLDocument(b []byte) error {

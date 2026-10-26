@@ -85,3 +85,97 @@ func TestHeaderSourceCannotInjectLines(t *testing.T) {
 		}
 	}
 }
+
+// customExisting renders one provider for a small pipeline and returns the file
+// plus an existing copy whose custom block holds the given lines.
+func customExisting(t *testing.T, provider, path string, custom ...string) (providers.GeneratedFile, []byte) {
+	t.Helper()
+	src := "apiVersion: renvoy.dev/v1alpha1\nkind: Pipeline\nmetadata: {name: demo}\ntriggers: {push: {}}\n" +
+		"extensions:\n  bamboo: {projectKey: DEMO, planKey: CUSTOM}\n" +
+		"stages:\n  - name: test\n    jobs:\n      - name: unit\n        steps:\n          - uses: checkout\n          - run: make test\n"
+	res := config.Compile([]byte(src), "renvoy.yaml", registry.Names())
+	if res.Pipeline == nil {
+		t.Fatal(res.Diagnostics)
+	}
+	p, _ := registry.Get(provider)
+	files, err := p.Render(context.Background(), res.Pipeline, providers.RenderOptions{SourceName: "renvoy.yaml"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range files {
+		if f.Path != path {
+			continue
+		}
+		out, err := render.Finalize(f, "renvoy.yaml", nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		lines := strings.Split(string(out), "\n")
+		for i, l := range lines {
+			if strings.Contains(l, "Provider-specific content retained during regeneration.") {
+				lines = append(append(append([]string{}, lines[:i]...), custom...), lines[i+1:]...)
+				return f, []byte(strings.Join(lines, "\n"))
+			}
+		}
+		if path == "bamboo-specs/src/main/java/specs/PlanSpec.java" {
+			for i, l := range lines {
+				if strings.TrimSpace(l) == "// renvoy:begin custom" {
+					end := i + 1
+					for strings.TrimSpace(lines[end]) != "// renvoy:end custom" {
+						end++
+					}
+					lines = append(append(append([]string{}, lines[:i+1]...), custom...), lines[end:]...)
+					return f, []byte(strings.Join(lines, "\n"))
+				}
+			}
+		}
+		t.Fatalf("%s has no custom block", path)
+	}
+	t.Fatalf("%s did not render %s", provider, path)
+	return providers.GeneratedFile{}, nil
+}
+
+// Round 4: custom blocks may only add content that does not change how the
+// generated jobs run, in a form every downstream parser reads the same way.
+func TestCustomBlockPoliciesPerProvider(t *testing.T) {
+	java := "bamboo-specs/src/main/java/specs/PlanSpec.java"
+	cases := []struct {
+		name, provider, path string
+		lines                []string
+		ok                   bool
+	}{
+		{"gitlab new job", "gitlab", ".gitlab-ci.yml", []string{"extra:", "  script: [make extra]"}, true},
+		{"gitlab hidden template", "gitlab", ".gitlab-ci.yml", []string{".base:", "  tags: [docker]"}, true},
+		{"gitlab default applies to all jobs", "gitlab", ".gitlab-ci.yml", []string{"default:", "  before_script: [echo MARKER]"}, false},
+		{"gitlab include", "gitlab", ".gitlab-ci.yml", []string{"include:", "  - local: other.yml"}, false},
+		{"gitlab yaml 1.1 key", "gitlab", ".gitlab-ci.yml", []string{"yes:", "  script: [echo MARKER]"}, false},
+		{"gitlab NEL line break", "gitlab", ".gitlab-ci.yml", []string{"extra: a\u0085unit: replaced"}, false},
+		{"gitlab LS line break", "gitlab", ".gitlab-ci.yml", []string{"extra: a\u2028unit: replaced"}, false},
+		{"github concurrency", "github-actions", ".github/workflows/demo.yml", []string{"concurrency:", "  group: ci"}, true},
+		{"github env applies to all jobs", "github-actions", ".github/workflows/demo.yml", []string{"env:", "  MARKER: 1"}, false},
+		{"github defaults", "github-actions", ".github/workflows/demo.yml", []string{"defaults:", "  run:", "    working-directory: x"}, false},
+		{"azure name", "azure-devops", "azure-pipelines.yml", []string{"name: $(Date:yyyyMMdd)$(Rev:.r)"}, true},
+		{"azure pool", "azure-devops", "azure-pipelines.yml", []string{"pool:", "  name: other"}, false},
+		{"azure extends", "azure-devops", "azure-pipelines.yml", []string{"extends:", "  template: t.yml"}, false},
+		{"bamboo notifications", "bamboo", "bamboo-specs/bamboo.yaml", []string{"notifications: []"}, true},
+		{"bamboo docker default", "bamboo", "bamboo-specs/bamboo.yaml", []string{"docker: alpine"}, false},
+		{"bamboo branch overrides", "bamboo", "bamboo-specs/bamboo.yaml", []string{"branch-overrides: []"}, false},
+		{"jenkins post block", "jenkins", "Jenkinsfile", []string{"    post {", "        always { echo 'done' }", "    }"}, true},
+		{"jenkins interpolation", "jenkins", "Jenkinsfile", []string{"    post { always { echo \"${env.X}\" } }"}, false},
+		{"jenkins lone CR", "jenkins", "Jenkinsfile", []string{"    // note\r } node { echo 'x' } pipeline {"}, false},
+		{"java helper method", "bamboo-java", java, []string{"    Plan customize(Plan plan) {", "        return plan.description(\"x\");", "    }"}, true},
+		{"java lone CR (javac ends the comment)", "bamboo-java", java, []string{"    Plan customize(Plan plan) { return plan; }", "    // note\r } class Extra { static int marker = 42;", "    static int y = 1;"}, false},
+		{"pom doctype", "bamboo-java", "bamboo-specs/pom.xml", []string{"<!DOCTYPE x [<!ENTITY a \"b\">]>"}, false},
+		{"pom dependency", "bamboo-java", "bamboo-specs/pom.xml", []string{"    <dependency><groupId>a</groupId></dependency>"}, true},
+	}
+	for _, c := range cases {
+		f, existing := customExisting(t, c.provider, c.path, c.lines...)
+		_, err := render.Finalize(f, "renvoy.yaml", existing)
+		if c.ok && err != nil {
+			t.Errorf("%s: legitimate custom content was refused: %v", c.name, err)
+		}
+		if !c.ok && err == nil {
+			t.Errorf("%s: custom content was accepted", c.name)
+		}
+	}
+}

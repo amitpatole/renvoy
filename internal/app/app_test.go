@@ -303,3 +303,18 @@ func TestGitLabReservesGitStrategy(t *testing.T) {
 		t.Fatalf("stderr: %s", r.stderr)
 	}
 }
+
+// Custom content is preserved but not described by renvoy.yaml; diff says so.
+func TestDiffReportsCustomContent(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "renvoy.yaml"), app.Starter)
+	expectCode(t, run(t, dir, "generate", "-p", "gitlab"), app.ExitOK)
+	path := filepath.Join(dir, ".gitlab-ci.yml")
+	data, _ := os.ReadFile(path)
+	writeFile(t, path, strings.Replace(string(data), "# Provider-specific content retained during regeneration.\n", "extra:\n  script: [make extra]\n", 1))
+	r := run(t, dir, "diff", "-p", "gitlab")
+	expectCode(t, r, app.ExitOK)
+	if !strings.Contains(r.stderr, "note: .gitlab-ci.yml has 2 line(s) of custom content") {
+		t.Fatalf("stderr: %s", r.stderr)
+	}
+}
