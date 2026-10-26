@@ -54,7 +54,7 @@ response (`code: "unsupported_protocol"`) and exits.
 ```
 
 ```json
-{"id":"2","type":"capabilities","capabilities":[{"id":"jobs.matrix","support":"native"},{"id":"steps.cache","support":"unsupported","note":"use a Harness cache step in a custom block"}]}
+{"id":"2","type":"capabilities","capabilities":[{"id":"jobs.matrix","support":"native"},{"id":"steps.cache","support":"unsupported","note":"Harness caches are configured on the pipeline"}]}
 ```
 
 Capability IDs and support levels are the ones listed in

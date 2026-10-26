@@ -182,6 +182,11 @@ func TestCustomBlockPoliciesPerProvider(t *testing.T) {
 		{"java invalid utf-8", "bamboo-java", java, []string{"    Plan customize(Plan plan) { return plan; }", "    // x\xff\xfe"}, false},
 		{"gitlab tab in value", "gitlab", ".gitlab-ci.yml", []string{"extra:", "  script: [\"a\tb\"]", "  variables: {X: \"a\tb\"}"}, false},
 		{"gitlab pages job", "gitlab", ".gitlab-ci.yml", []string{"pages:", "  script: [make site]", "  artifacts: {paths: [public/]}"}, true},
+		{"jenkins string-named directive", "jenkins", "Jenkinsfile", []string{"    'agent' 'any'"}, false},
+		{"jenkins escaped dollar in double quotes", "jenkins", "Jenkinsfile", []string{"    post { always { sh \"echo \\${VAR}\" } }"}, true},
+		{"pom unbound prefix", "bamboo-java", "bamboo-specs/pom.xml", []string{"    <a:b/>"}, false},
+		{"pom duplicate attribute", "bamboo-java", "bamboo-specs/pom.xml", []string{"    <dependency x=\"1\" x=\"2\"/>"}, false},
+		{"pom control character", "bamboo-java", "bamboo-specs/pom.xml", []string{"    <!-- a\x01 -->"}, false},
 	}
 	for _, c := range cases {
 		f, existing := customExisting(t, c.provider, c.path, c.lines...)
@@ -192,5 +197,22 @@ func TestCustomBlockPoliciesPerProvider(t *testing.T) {
 		if !c.ok && err == nil {
 			t.Errorf("%s: custom content was accepted", c.name)
 		}
+	}
+}
+
+// Round 7: decoding custom YAML into maps checks duplicate keys in quadratic
+// time, so the custom part is bounded on its node tree first.
+func TestLargeCustomYAMLFailsFast(t *testing.T) {
+	var lines []string
+	for i := 0; i < 20000; i++ {
+		lines = append(lines, fmt.Sprintf("k%d: {script: [a]}", i))
+	}
+	f, existing := customExisting(t, "gitlab", ".gitlab-ci.yml", lines...)
+	start := time.Now()
+	if _, err := render.Finalize(f, "renvoy.yaml", existing); err == nil {
+		t.Fatal("an oversized custom block was accepted")
+	}
+	if d := time.Since(start); d > 2*time.Second {
+		t.Fatalf("refusing an oversized custom block took %v", d)
 	}
 }

@@ -8,7 +8,7 @@ error [gitlab] renvoy.yaml:30:11 stages[0].jobs[0].container.options:
 
 error [gitlab] renvoy.yaml:37:13 stages[0].jobs[0].steps[2].uses:
   GitLab CI cannot express steps.uses
-  hint: GitLab has no reusable step references; use run steps or CI/CD components in a custom block
+  hint: GitLab has no reusable step references; use run steps
 
 error [gitlab] renvoy.yaml:46:13 stages[0].jobs[0].steps[4].when:
   GitLab CI cannot express steps.when

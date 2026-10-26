@@ -51,8 +51,9 @@ dependency graph, and naming rules that a schema cannot express.
   and build arguments whose names describe the value, meaning they contain one of
   the words `BRANCH`, `REF`, `TAG`, `VERSION`, `NAME`, `LABEL`, `ENV`, `ENVIRONMENT`,
   `CHANNEL`, `TARGET`, `URL`, or `SLUG` (for example `BRANCH_NAME`, `IMAGE_TAG`,
-  `DEPLOY_ENV`), and do not select programs, configuration, directories, proxies,
-  or CI runner behavior (`GIT_*`, `CI_*`, `BUILD_*`, `*_FILE`, `*_OPTS`, `*PATH`,
+  `DEPLOY_ENV`), and do not select programs, configuration, directories, hosts,
+  proxies, tool versions, or CI runner behavior (`GIT_*`, `CI_*`, `BUILD_*`,
+  `PYENV_*`, `VIRTUAL_ENV`, `*_FILE(S)`, `*_DIR(S)`, `*_HOST`, `*_OPTS`, `*PATH`,
   `HTTP_PROXY`, and similar).
 - **Duplicate keys** in `variables`, `env`, `with`, `buildArgs`, and `matrix` are errors.
 - **Paths.** Paths are relative to the workspace, use `/`, never contain `..`, and
@@ -223,15 +224,18 @@ Custom content may only add to a file:
   custom code may only add `post { ... }` sections at its top level (pipeline-wide
   directives such as `options`, `environment`, `tools`, and `agent` would apply to
   every generated stage) and may not use `${...}` inside double-quoted strings
-  (single-quoted strings such as `sh 'echo ${VAR}'` are fine). The Java Specs
+  (single-quoted strings such as `sh 'echo ${VAR}'` and escaped `\${VAR}` are fine). The Java Specs
   `customize(Plan)` method is intentionally free to change the plan.
-- **pom.xml:** well-formed elements, comments, and CDATA only; no DOCTYPE, ENTITY,
-  ATTLIST, other declarations, or processing instructions.
+- **pom.xml:** well-formed, unprefixed elements with unique attributes, comments,
+  and CDATA only, using legal XML characters; no DOCTYPE, ENTITY, ATTLIST, other
+  declarations, or processing instructions.
 - **Every format:** valid UTF-8 without carriage returns, Unicode line separators
   (NEL, LS, PS), or invisible format characters (BOM, zero-width, bidirectional
   controls), and no tabs in YAML, all of which parsers read differently. A comment
   line you add that names a marker in any syntax counts as a marker, so a
-  misspelled block is refused rather than overwritten by `--force`.
+  misspelled block is refused rather than overwritten by `--force`. YAML custom
+  blocks are limited to 256 KiB and 10,000 nodes. Values in `renvoy.yaml` may not
+  contain marker text (`renvoy:begin custom` / `renvoy:end custom`).
 
 `renvoy diff` notes each file whose custom block holds content, because that
 content is preserved but not described by `renvoy.yaml`.
@@ -275,6 +279,7 @@ Config files are read up to 1 MiB, YAML documents up to 100,000 nodes (including
 nodes reached through aliases), pipelines up to 500 jobs, variable values up to
 4 KiB, 1 MiB of variable values substituted at references, 1,024 matrix
 combinations in total, branch and tag patterns up to 255 characters and 100 per
-list, 1 MiB of condition text repeated on dependent jobs, 16 matrix axes per job,
+list, cron expressions up to 256 characters, 1 MiB of condition text repeated on
+dependent jobs, 16 matrix axes per job,
 1 MiB of matrix entries (axis text times combinations), names up to 128
 characters, and generated or existing files up to 4 MiB.

@@ -308,3 +308,36 @@ func TestBranchAllowlistMatchesWholeWords(t *testing.T) {
 		}
 	}
 }
+
+// Round 7: cron validation was quadratic in the field length.
+func TestLongCronFailsFast(t *testing.T) {
+	cron := "0 3 * * " + strings.TrimSuffix(strings.Repeat("1,", 200000), ",")
+	start := time.Now()
+	if err := pipeline.ValidateCron(cron); err == nil || !strings.Contains(err.Error(), "at most 256") {
+		t.Fatalf("err = %v", err)
+	}
+	if d := time.Since(start); d > time.Second {
+		t.Fatalf("cron validation took %v", d)
+	}
+}
+
+// Round 7: custom-block marker text in rendered values is refused at validation.
+func TestMarkerTextInValuesIsRefused(t *testing.T) {
+	src := strings.Replace(minimal, "          - run: make test\n", "          - run: |\n              # renvoy:begin custom\n              make test\n", 1)
+	_, diags := parse(t, src)
+	expectError(t, diags, "stages[0].jobs[0].steps[0].run", "marker text")
+	ok := strings.Replace(minimal, "          - run: make test\n", "          - name: \"Renvoy: end-to-end tests\"\n            run: make e2e\n", 1)
+	if _, diags := parse(t, ok); diags.HasErrors() {
+		t.Fatalf("an ordinary step name was refused:\n%s", render(diags))
+	}
+}
+
+// Round 7: names that steer environments, hosts, or tool versions are not neutral.
+func TestMoreToolNamesRejectBranchValues(t *testing.T) {
+	for _, name := range []string{"VIRTUAL_ENV", "COMPOSE_ENV_FILES", "SONAR_HOST_URL", "REGISTRY_URL",
+		"PYENV_VERSION", "RBENV_VERSION", "BUILDX_BUILDER_NAME", "CACHE_DIRS", "API_HOST"} {
+		src := strings.Replace(minimal, "        steps:\n", "        env:\n          "+name+": 'x-${git.branch}'\n        steps:\n", 1)
+		_, diags := parse(t, src)
+		expectError(t, diags, "stages[0].jobs[0].env."+name, "cannot be set from ${git.branch}")
+	}
+}

@@ -90,6 +90,7 @@ func (v *validator) run() {
 		v.errorf("kind", "unsupported kind %q", p.Kind).Hint = "the only supported kind is Pipeline"
 	}
 	v.checkName("metadata.name", p.Metadata.Name, "pipeline")
+	v.checkNoMarker("metadata.description", p.Metadata.Description)
 	v.checkTriggers()
 
 	folded := map[string]string{}
@@ -109,6 +110,7 @@ func (v *validator) run() {
 		}
 		v.warnProviderSyntax(path, va.Value)
 		v.checkControlEnv(path, va.Name, va.Value)
+		v.checkNoMarker(path, va.Value)
 		if len(va.Value) > MaxVariableValue {
 			v.errorf(path, "variable value is %d bytes; at most %d are allowed", len(va.Value), MaxVariableValue)
 		}
@@ -342,6 +344,9 @@ func PatternPrefix(pat string) (string, bool) {
 
 // ValidateCron checks a five-field cron expression with numeric fields.
 func ValidateCron(expr string) error {
+	if len(expr) > 256 {
+		return fmt.Errorf("cron expression is %d characters; at most 256 are allowed", len(expr))
+	}
 	fields := strings.Fields(expr)
 	if len(fields) != 5 {
 		return fmt.Errorf("cron expression %q must have exactly five fields", expr)
@@ -352,12 +357,13 @@ func ValidateCron(expr string) error {
 		if !cronFieldRe.MatchString(f) {
 			return fmt.Errorf("cron %s field %q may contain only digits and * / , -", names[i], f)
 		}
+		stepped := strings.Contains(f, "/")
 		for _, part := range strings.FieldsFunc(f, func(r rune) bool { return r == ',' || r == '-' || r == '/' || r == '*' }) {
 			n, err := strconv.Atoi(part)
 			if err != nil || n < 0 || n > 59 {
 				return fmt.Errorf("cron %s field %q is out of range", names[i], f)
 			}
-			if !strings.Contains(f, "/") && (n < limits[i][0] || n > limits[i][1]) {
+			if !stepped && (n < limits[i][0] || n > limits[i][1]) {
 				return fmt.Errorf("cron %s value %d is outside %d-%d", names[i], n, limits[i][0], limits[i][1])
 			}
 		}
@@ -510,9 +516,13 @@ func (v *validator) checkEnv(path string, env Vars, axes map[string]bool) {
 		ep := JoinKey(path, e.Name)
 		v.checkEnvName(ep, e.Name, "environment variable")
 		if v.takenName(e.Name) || hasFold(axes, e.Name) {
-			v.errorf(ep, "environment variable %q shadows a variable, secret, or matrix axis of the same name", e.Name).
-				Hint = "rename it; shadowing would change what ${...} references resolve to on some providers"
+			d := v.errorf(ep, "environment variable %q shadows a variable, secret, or matrix axis of the same name", e.Name)
+			d.Hint = "rename it; shadowing would change what ${...} references resolve to on some providers"
+			if slices.ContainsFunc(v.p.Secrets, func(s string) bool { return strings.EqualFold(s, e.Name) }) {
+				d.Hint = "run steps already receive the secret as ${secrets." + e.Name + "}; to pass it to a tool under this name, reference it in the script"
+			}
 		}
+		v.checkNoMarker(ep, e.Value)
 		v.checkTemplate(ep, e.Value, axes, NSVariables, NSSecrets, NSGit, NSMatrix)
 		v.warnProviderSyntax(ep, e.Value)
 		v.checkControlEnv(ep, e.Name, e.Value)
@@ -576,15 +586,17 @@ var (
 		"GLIBC_TUNABLES": true, "KUBECONFIG": true, "NODE_PATH": true, "PYTHONHOME": true, "RUBYLIB": true,
 		"HTTP_PROXY": true, "HTTPS_PROXY": true, "ALL_PROXY": true, "NO_PROXY": true, "FTP_PROXY": true,
 		"CC": true, "CXX": true, "CPP": true, "LD": true, "AR": true, "AS": true, "MAKEFLAGS": true,
-		"MFLAGS": true, "GNUMAKEFLAGS": true, "MAKE": true,
+		"MFLAGS": true, "GNUMAKEFLAGS": true, "MAKE": true, "VIRTUAL_ENV": true,
 	}
 	sensitivePrefixes = []string{"LD_", "DYLD_", "BASH_", "GIT_", "CI_", "FF_", "DOCKER_", "XDG_", "NPM_CONFIG_",
 		"PIP_", "PIPENV_", "SSL_", "CURL_", "GITHUB_", "RUNNER_", "ACTIONS_", "SYSTEM_", "AGENT_", "BUILD_", "BAMBOO_",
 		"JENKINS_", "KUBE", "PYTHON", "PERL", "RUBY", "JAVA", "NODE_", "GRADLE_", "MAVEN_", "CARGO_", "GO",
 		"UV_", "TF_", "AWS_", "GOOGLE_", "AZURE_", "ARM_", "BUNDLE_", "COMPOSER_", "RUSTC", "RUSTUP_", "CONDA",
-		"POETRY_", "YARN_", "PNPM_", "DENO_", "HELM_", "ANSIBLE_", "VAULT_", "SSH_", "GPG", "GNUPG"}
+		"POETRY_", "YARN_", "PNPM_", "DENO_", "HELM_", "ANSIBLE_", "VAULT_", "SSH_", "GPG", "GNUPG",
+		"PYENV_", "RBENV_", "NODENV_", "NVM_", "ASDF_", "SDKMAN_", "COMPOSE_", "BUILDX_", "SONAR_", "REGISTRY"}
 	sensitiveSuffixes = []string{"_OPTS", "_OPTIONS", "PATH", "_HOME", "_CONFIG", "_DIR", "_PROXY", "_COMMAND",
-		"_FILE", "FLAGS", "_WRAPPER", "_ARGS", "_CMD", "_BIN", "_EXE", "_SHELL", "_PROGRAM"}
+		"_FILE", "FLAGS", "_WRAPPER", "_ARGS", "_CMD", "_BIN", "_EXE", "_SHELL", "_PROGRAM",
+		"_FILES", "_DIRS", "_PATHS", "_HOST", "_HOSTS", "_HOST_URL", "_SERVER", "_ENDPOINT"}
 )
 
 // neutralBranchNameRe is the allowlist for variables that may carry a branch name:
@@ -634,6 +646,16 @@ func hasFold(set map[string]bool, name string) bool {
 		}
 	}
 	return false
+}
+
+// markerTextRe matches custom-block marker text; values containing it would make
+// generated files look like they have malformed custom blocks.
+var markerTextRe = regexp.MustCompile(`(?i)renvoy\s*:\s*(begin|end)\s*custom`)
+
+func (v *validator) checkNoMarker(path, value string) {
+	if markerTextRe.MatchString(value) {
+		v.errorf(path, "values may not contain custom-block marker text (renvoy:begin / renvoy:end)")
+	}
 }
 
 // takenName reports whether name matches a variable or secret, ignoring case.
@@ -758,6 +780,11 @@ func (v *validator) checkStep(path string, s *Step, j *Job, axes map[string]bool
 	}
 	if strings.ContainsAny(s.Name, "\n\r") {
 		v.errorf(path+".name", "step names must be a single line")
+	}
+	v.checkNoMarker(path+".name", s.Name)
+	v.checkNoMarker(path+".run", s.Run)
+	for _, w := range s.With {
+		v.checkNoMarker(JoinKey(path+".with", w.Name), w.Value)
 	}
 	v.warnProviderSyntax(path+".name", s.Name)
 	kind := kinds[0]

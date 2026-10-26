@@ -99,7 +99,7 @@ This section is generated from the provider code by
 - `steps.env` (emulated): rendered as a subshell that exports the variables (bash and sh only)
 - `steps.workingDirectory` (emulated): rendered as a subshell that changes directory (bash and sh only)
 - `steps.checkout` (emulated): GitLab always clones before the script; jobs without checkout set GIT_STRATEGY: none
-- `steps.uses` (unsupported): GitLab has no reusable step references; use run steps or CI/CD components in a custom block
+- `steps.uses` (unsupported): GitLab has no reusable step references; use run steps
 - `steps.cache` (emulated): job-level cache, restored before the script and saved when the job succeeds
 - `steps.uploadArtifact` (emulated): job artifacts, uploaded after the script finishes
 - `steps.downloadArtifact` (emulated): downloaded through needs with artifacts: true
@@ -140,8 +140,8 @@ This section is generated from the provider code by
 - `jobs.container` (native): docker agent (Docker Pipeline plugin)
 - `secrets` (native): credentials('NAME'); create secret text credentials whose IDs match the secret names
 - `steps.checkout` (emulated): default checkout at the start of the stage; jobs without checkout skip it
-- `steps.uses` (unsupported): Renvoy does not invent plugin steps; use run steps or a shared library in a custom block
-- `steps.cache` (unsupported): Jenkins core has no cache step; remove the cache step or use a plugin in a custom block
+- `steps.uses` (unsupported): Renvoy does not invent plugin steps; use run steps
+- `steps.cache` (unsupported): Jenkins core has no cache step; remove the cache step
 - `steps.uploadArtifact` (emulated): archiveArtifacts plus stash for downstream jobs
 - `steps.downloadArtifact` (emulated): unstash
 - `steps.publishTestResults` (native): post { always { junit } }

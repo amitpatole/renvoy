@@ -10,11 +10,11 @@ info [jenkins] renvoy.yaml:12:1 secrets:
 
 error [jenkins] renvoy.yaml:33:13 stages[0].jobs[0].steps[1].cache:
   Jenkins Declarative Pipeline cannot express steps.cache
-  hint: Jenkins core has no cache step; remove the cache step or use a plugin in a custom block
+  hint: Jenkins core has no cache step; remove the cache step
 
 error [jenkins] renvoy.yaml:37:13 stages[0].jobs[0].steps[2].uses:
   Jenkins Declarative Pipeline cannot express steps.uses
-  hint: Renvoy does not invent plugin steps; use run steps or a shared library in a custom block
+  hint: Renvoy does not invent plugin steps; use run steps
 
 error [jenkins] renvoy.yaml:43:15 stages[0].jobs[0].steps[3].env.NODE_AUTH_TOKEN:
   Jenkins step environment cannot bind ${secrets.NPM_TOKEN} without interpolating the secret into Groovy

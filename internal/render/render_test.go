@@ -348,3 +348,26 @@ func TestForeignSyntaxMarkersAreRefused(t *testing.T) {
 		}
 	}
 }
+
+// Round 7: a generated line excuses only as many identical near-miss lines as it
+// accounts for; an extra copy is the user's and must block --force.
+func TestNearMissCountsGeneratedCopies(t *testing.T) {
+	gen := providers.GeneratedFile{Path: "ci/out.yml", Comment: "#", YAML: true,
+		Content: []byte("a: 1\n# renvoy:begin custom2\n# renvoy:end custom2\n\n" + render.CustomBlock("#", ""))}
+	root := t.TempDir()
+	out, err := render.Finalize(gen, "renvoy.yaml", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	existing := strings.Replace(string(out), "# renvoy:begin custom\n",
+		"# renvoy:begin custom2\nconcurrency: keepme\n# renvoy:end custom2\n# renvoy:begin custom\n", 1)
+	if err := os.MkdirAll(filepath.Join(root, "ci"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "ci", "out.yml"), []byte(existing), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, c := plan(t, root, gen, true); len(c) != 1 {
+		t.Fatalf("--force would drop custom content between extra near-miss markers, conflicts: %v", c)
+	}
+}

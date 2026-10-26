@@ -67,7 +67,7 @@ type block struct {
 
 // markerMention catches near-miss markers (any case or spacing) so they are
 // refused instead of silently ignored.
-var markerMention = regexp.MustCompile(`(?i)renvoy:\s*(begin|end)\b`)
+var markerMention = regexp.MustCompile(`(?i)renvoy\s*:\s*(begin|end)\s*custom`)
 
 // findBlock locates the custom block in lines. It returns ok=false when there is none.
 // findBlock locates the custom block. nearMiss, when set, decides whether a line
@@ -235,12 +235,20 @@ func Finalize(f providers.GeneratedFile, source string, existing []byte) ([]byte
 		var err error
 		// A near-miss marker is a comment line the user added; text that is also
 		// in the generated output (a step name, a script line) is Renvoy's own.
-		generatedLines := map[string]bool{}
+		generatedLines := map[string]int{}
 		for _, l := range body {
-			generatedLines[strings.TrimSpace(l)] = true
+			generatedLines[strings.TrimSpace(l)]++
 		}
 		custom, ok, err = extractCustom(existing, st, func(t string) bool {
-			return commentLike(t) && !generatedLines[t]
+			if !commentLike(t) {
+				return false
+			}
+			// Each generated copy excuses one occurrence; any extra is the user's.
+			if generatedLines[t] > 0 {
+				generatedLines[t]--
+				return false
+			}
+			return true
 		})
 		if err != nil {
 			return nil, err
@@ -299,13 +307,22 @@ func checkCustom(f providers.GeneratedFile, generated, combined []byte, custom [
 	}
 	switch {
 	case f.YAML:
-		if err := singleYAMLDocument(combined); err != nil {
-			return fmt.Errorf("the custom block makes the file invalid YAML: %w", err)
+		if len(text) > MaxCustomBytes {
+			return fmt.Errorf("the custom block is %d bytes; at most %d are allowed", len(text), MaxCustomBytes)
 		}
-		var gen, all map[string]any
+		var gen map[string]any
 		if err := yaml.Unmarshal(generated, &gen); err != nil {
 			return err
 		}
+		// Check the custom part on its node tree first: decoding into maps checks
+		// duplicate keys in quadratic time.
+		if err := plainCustomYAML(text, gen, f.CustomKeys); err != nil {
+			return err
+		}
+		if err := singleYAMLDocument(combined); err != nil {
+			return fmt.Errorf("the custom block makes the file invalid YAML: %w", err)
+		}
+		var all map[string]any
 		if err := yaml.Unmarshal(combined, &all); err != nil {
 			return fmt.Errorf("the custom block makes the file invalid YAML: %w", err)
 		}
@@ -313,9 +330,6 @@ func checkCustom(f providers.GeneratedFile, generated, combined []byte, custom [
 			if !reflect.DeepEqual(all[k], v) {
 				return fmt.Errorf("the custom block changes the generated %q section; custom YAML may only add new top-level keys", k)
 			}
-		}
-		if err := plainCustomYAML(text, gen, f.CustomKeys); err != nil {
-			return err
 		}
 	case f.Comment == providers.CommentXML:
 		if strings.Contains(text, "<?") {
@@ -329,10 +343,14 @@ func checkCustom(f providers.GeneratedFile, generated, combined []byte, custom [
 		dec := xml.NewDecoder(strings.NewReader("<custom>" + strings.Join(custom, "\n") + "</custom>"))
 		dec.Strict = true
 		for {
-			if _, err := dec.Token(); errors.Is(err, io.EOF) {
+			tok, err := dec.Token()
+			if errors.Is(err, io.EOF) {
 				break
 			} else if err != nil {
 				return fmt.Errorf("the custom block is not a well-formed XML fragment: %w", err)
+			}
+			if err := checkXMLToken(tok); err != nil {
+				return err
 			}
 		}
 	case f.Comment == providers.CommentSlash:
@@ -344,7 +362,7 @@ func checkCustom(f providers.GeneratedFile, generated, combined []byte, custom [
 		}
 		jenkins := path.Base(f.Path) == "Jenkinsfile"
 		var top strings.Builder
-		interpolates := false
+		usesGString := false
 		if err := balanced(code, func(c byte, depth int) {
 			if depth == 0 {
 				top.WriteByte(c)
@@ -352,13 +370,13 @@ func checkCustom(f providers.GeneratedFile, generated, combined []byte, custom [
 		}, func(quote, body string) {
 			// Groovy evaluates ${...} inside double-quoted strings as code, which
 			// the bracket check treats as text. Single-quoted strings are literal.
-			if strings.HasPrefix(quote, `"`) && strings.Contains(body, "${") {
-				interpolates = true
+			if strings.HasPrefix(quote, `"`) && interpolates(body) {
+				usesGString = true
 			}
 		}); err != nil {
 			return fmt.Errorf("the custom block could change the generated code around it: %w", err)
 		}
-		if jenkins && interpolates {
+		if jenkins && usesGString {
 			return errors.New("the custom block uses ${...} in a double-quoted string; use single quotes or concatenation such as 'x' + env.NAME")
 		}
 		// Only post sections may be added at the top of the pipeline block: any
@@ -378,8 +396,12 @@ func plainCustomYAML(custom string, generated map[string]any, policy providers.C
 	if err := yaml.Unmarshal([]byte(custom), &doc); err != nil {
 		return fmt.Errorf("the custom block is not valid YAML on its own: %w", err)
 	}
+	nodes := 0
 	var walk func(n *yaml.Node) error
 	walk = func(n *yaml.Node) error {
+		if nodes++; nodes > MaxCustomNodes {
+			return fmt.Errorf("the custom block has more than %d YAML nodes", MaxCustomNodes)
+		}
 		switch {
 		case n.Kind == yaml.AliasNode:
 			return errors.New("the custom block uses a YAML alias; aliases, anchors, and merge keys are not allowed")
@@ -465,7 +487,7 @@ func singleYAMLDocument(b []byte) error {
 // and comments, so a custom block cannot close the generated scope it sits in.
 // balanced reports unbalanced brackets. When code is non-nil it is called with
 // each character outside strings and comments and the bracket depth before it
-// (strings and comments are reported as a single space).
+// (a string is reported as '"' and a comment as a single space).
 func balanced(src string, code func(c byte, depth int), onString func(quote, body string)) error {
 	if code == nil {
 		code = func(byte, int) {}
@@ -504,7 +526,7 @@ func balanced(src string, code func(c byte, depth int), onString func(quote, bod
 				return errors.New("unterminated string")
 			}
 			onString(q, rest[3:j])
-			code(' ', len(stack))
+			code('"', len(stack))
 			i += j + 3
 		case rest[0] == '"' || rest[0] == '\'':
 			q := rest[0]
@@ -521,7 +543,7 @@ func balanced(src string, code func(c byte, depth int), onString func(quote, bod
 				return errors.New("unterminated string")
 			}
 			onString(string(q), rest[1:j])
-			code(' ', len(stack))
+			code('"', len(stack))
 			i += j + 1
 		default:
 			c := rest[0]
@@ -546,6 +568,76 @@ func balanced(src string, code func(c byte, depth int), onString func(quote, bod
 		return fmt.Errorf("unclosed %q", stack[len(stack)-1])
 	}
 	return nil
+}
+
+// MaxCustomBytes and MaxCustomNodes bound the YAML custom content Renvoy checks.
+const (
+	MaxCustomBytes = 256 << 10
+	MaxCustomNodes = 10_000
+)
+
+// interpolates reports a ${ in a Groovy double-quoted string body that is not
+// escaped with an odd number of backslashes.
+func interpolates(body string) bool {
+	for i := strings.Index(body, "${"); i >= 0; i = nextIndex(body, "${", i) {
+		backslashes := 0
+		for j := i - 1; j >= 0 && body[j] == '\\'; j-- {
+			backslashes++
+		}
+		if backslashes%2 == 0 {
+			return true
+		}
+	}
+	return false
+}
+
+// checkXMLToken keeps pom custom content to what Maven's parser accepts:
+// unprefixed names, unique attributes, and legal XML characters.
+func checkXMLToken(tok xml.Token) error {
+	legal := func(s string) error {
+		for _, r := range s {
+			if !isXMLChar(r) {
+				return fmt.Errorf("the custom block contains %U, which is not allowed in XML", r)
+			}
+		}
+		return nil
+	}
+	switch t := tok.(type) {
+	case xml.StartElement:
+		if t.Name.Space != "" {
+			return fmt.Errorf("the custom block uses the namespace prefix %q, which pom.xml does not declare", t.Name.Space)
+		}
+		seen := map[string]bool{}
+		for _, a := range t.Attr {
+			key := a.Name.Space + ":" + a.Name.Local
+			if seen[key] {
+				return fmt.Errorf("the custom block repeats the attribute %q", a.Name.Local)
+			}
+			seen[key] = true
+			if a.Name.Space != "" && a.Name.Space != "xmlns" {
+				return fmt.Errorf("the custom block uses the namespace prefix %q, which pom.xml does not declare", a.Name.Space)
+			}
+			if err := legal(a.Value); err != nil {
+				return err
+			}
+		}
+	case xml.CharData:
+		return legal(string(t))
+	case xml.Comment:
+		return legal(string(t))
+	}
+	return nil
+}
+
+// isXMLChar reports characters allowed in XML 1.0 documents.
+func isXMLChar(r rune) bool {
+	switch {
+	case r == 0x9, r == 0xA, r == 0xD:
+		return true
+	case r >= 0x20 && r <= 0xD7FF, r >= 0xE000 && r <= 0xFFFD, r >= 0x10000 && r <= 0x10FFFF:
+		return true
+	}
+	return false
 }
 
 // nextIndex finds the next occurrence of sub in s after position i.

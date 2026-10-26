@@ -44,7 +44,7 @@ func (*Provider) Capabilities() providers.CapabilitySet {
 		providers.CapabilityInfo{ID: providers.CapContainerOptions, Support: providers.Unsupported,
 			Note: "GitLab cannot pass docker run options from the pipeline; configure them on the runner"},
 		providers.CapabilityInfo{ID: providers.CapReusableSteps, Support: providers.Unsupported,
-			Note: "GitLab has no reusable step references; use run steps or CI/CD components in a custom block"},
+			Note: "GitLab has no reusable step references; use run steps"},
 		providers.CapabilityInfo{ID: providers.CapCheckout, Support: providers.Emulated,
 			Note: "GitLab always clones before the script; jobs without checkout set GIT_STRATEGY: none"},
 		providers.CapabilityInfo{ID: providers.CapStepEnv, Support: providers.Emulated,

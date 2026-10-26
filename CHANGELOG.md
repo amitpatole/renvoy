@@ -107,3 +107,14 @@ All notable changes to this project are documented here. The format follows
 - The `${git.branch}` allowlist matches whole words and adds `ENV`, `ENVIRONMENT`,
   `CHANNEL`, `TARGET`, `URL`, and `SLUG`; step names or scripts that mention a
   marker no longer block generation; a custom GitLab `pages` job is allowed.
+- Cron expressions are limited to 256 characters and validated in linear time
+  (a 960 KB cron took 19 s); YAML custom blocks are limited to 256 KiB and 10,000
+  nodes and checked before the quadratic map decode (100k keys took over 60 s).
+- Values may not contain custom-block marker text, and near-miss markers are
+  counted against identical generated lines, so marker-like text cannot hide a
+  misspelled block from `--force`; `renvoy diff` counts custom lines reliably.
+- The `${git.branch}` rules cover more tool settings (`VIRTUAL_ENV`, `PYENV_*`,
+  `*_FILES`, `*_DIRS`, `*_HOST`, `SONAR_*`, `COMPOSE_*`, and others).
+- Jenkinsfile custom blocks treat strings at the top level as code (`'agent'
+  'any'` is refused) and allow escaped `\${...}`; pom.xml custom content must use
+  unprefixed names, unique attributes, and legal XML characters.

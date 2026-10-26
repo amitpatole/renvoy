@@ -47,7 +47,7 @@ func (c Conflict) Error() string { return c.Path + ": " + c.Reason }
 // CustomLines counts non-placeholder lines inside a planned file's custom block.
 func CustomLines(p Planned) int {
 	st := style{p.comment, p.commentEnd}
-	lines, ok, err := ExtractCustom(p.Content, st)
+	lines, ok, err := extractCustom(p.Content, st, nil)
 	if err != nil || !ok {
 		return 0
 	}
