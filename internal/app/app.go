@@ -291,7 +291,11 @@ func (e *env) generateCmd() *cobra.Command {
 				}
 				return nil
 			}
-			if err := render.Write(outDir, planned); err != nil {
+			backups, err := render.Write(outDir, planned)
+			for _, b := range backups {
+				fmt.Fprintf(e.stderr, "%-9s %s -> %s\n", "backup", b.Path, b.BackupPath)
+			}
+			if err != nil {
 				return err
 			}
 			for _, p := range planned {

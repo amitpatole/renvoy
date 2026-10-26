@@ -331,3 +331,30 @@ func TestStepNamesMentioningMarkersAreFine(t *testing.T) {
 		expectCode(t, r, app.ExitOK)
 	}
 }
+
+// Round 9: text resembling a marker in generated output must never block
+// regeneration, even after the step that produced it changes.
+func TestMarkerLikeTextNeverBlocksRegeneration(t *testing.T) {
+	dir := t.TempDir()
+	starter := strings.Replace(app.Starter, "          - run: pip install -r requirements.txt\n",
+		"          - run: |\n              # renvoy end-to-end smoke\n              pip install -r requirements.txt\n", 1) + bambooKeys
+	writeFile(t, filepath.Join(dir, "renvoy.yaml"), starter)
+	expectCode(t, run(t, dir, "generate", "--all"), app.ExitOK)
+	writeFile(t, filepath.Join(dir, "renvoy.yaml"), strings.Replace(starter, "# renvoy end-to-end smoke", "# smoke test", 1))
+	expectCode(t, run(t, dir, "generate", "--all"), app.ExitOK)
+}
+
+// --force reports where it saved the replaced file.
+func TestForcePrintsBackup(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "renvoy.yaml"), app.Starter)
+	writeFile(t, filepath.Join(dir, ".gitlab-ci.yml"), "hand: written\n")
+	r := run(t, dir, "generate", "-p", "gitlab", "--force")
+	expectCode(t, r, app.ExitOK)
+	if !strings.Contains(r.stderr, "backup    .gitlab-ci.yml -> .gitlab-ci.yml.renvoy-backup") {
+		t.Fatalf("stderr: %s", r.stderr)
+	}
+	if data, _ := os.ReadFile(filepath.Join(dir, ".gitlab-ci.yml.renvoy-backup")); string(data) != "hand: written\n" {
+		t.Fatalf("backup content = %q", data)
+	}
+}

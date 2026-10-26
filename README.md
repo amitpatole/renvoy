@@ -101,6 +101,9 @@ $ renvoy diff -p github-actions
      steps:
 ```
 
+`renvoy generate --force` replaces the file anyway and saves the edited version as
+`.github/workflows/my-service.yml.renvoy-backup` first.
+
 Put provider-specific additions inside the file's custom block, or set them in
 `renvoy.yaml` with a [provider extension](docs/providers.md#provider-extensions)
 (here, `extensions.github-actions.runners.linux: [ubuntu-24.04]`).

@@ -363,3 +363,15 @@ func TestCronItems(t *testing.T) {
 		}
 	}
 }
+
+// Round 9: a step equal to the field width is valid.
+func TestCronStepUpToFieldWidth(t *testing.T) {
+	for _, good := range []string{"0 */24 * * *", "*/60 * * * *"} {
+		if err := pipeline.ValidateCron(good); err != nil {
+			t.Errorf("%q: %v", good, err)
+		}
+	}
+	if err := pipeline.ValidateCron("0 */25 * * *"); err == nil {
+		t.Error("a step wider than the field was accepted")
+	}
+}

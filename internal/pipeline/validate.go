@@ -375,8 +375,8 @@ func cronItem(item string, lo, hi int) error {
 		return fmt.Errorf("%q is not *, a number, or a range, optionally with /step", item)
 	}
 	if m[2] != "" {
-		if step, _ := strconv.Atoi(m[2]); step < 1 || step > hi {
-			return fmt.Errorf("step %d must be between 1 and %d", step, hi)
+		if step, _ := strconv.Atoi(m[2]); step < 1 || step > hi-lo+1 {
+			return fmt.Errorf("step %d must be between 1 and %d", step, hi-lo+1)
 		}
 	}
 	if m[1] == "*" {

@@ -58,7 +58,7 @@ All notable changes to this project are documented here. The format follows
   (4 MiB).
 - Custom blocks may only add content: YAML must keep every generated section
   identical and stay a single document, Groovy and Java blocks must be balanced,
-  and pom.xml blocks must be well-formed. Near-miss markers in any case are refused.
+  and pom.xml blocks must be well-formed.
 - `${git.branch}` cannot set any variable that selects programs, configuration,
   directories, proxies, or CI runner behavior.
 - Warnings for Bamboo `${bamboo.x}` and dotted Azure `$(Name.Value)` substitutions
@@ -93,8 +93,7 @@ All notable changes to this project are documented here. The format follows
   writes every axis into every combination), and names to 128 characters.
 - Custom content rejects invisible format characters, float-like and
   trailing-space keys, pom.xml declarations other than comments and CDATA, and
-  pipeline-wide Jenkinsfile directives; markers in any comment syntax are treated
-  as markers.
+  pipeline-wide Jenkinsfile directives.
 - Matrix budget checks no longer loop per combination, so an oversized matrix with
   a container image fails immediately instead of hanging validation.
 - Build arguments follow the same `${git.branch}` rules as environment variables
@@ -110,18 +109,21 @@ All notable changes to this project are documented here. The format follows
 - Cron expressions are limited to 256 characters and validated in linear time
   (a 960 KB cron took 19 s); YAML custom blocks are limited to 256 KiB and 10,000
   nodes and checked before the quadratic map decode (100k keys took over 60 s).
-- Values may not contain custom-block marker text, and near-miss markers are
-  counted against identical generated lines, so marker-like text cannot hide a
-  misspelled block from `--force`; `renvoy diff` counts custom lines reliably.
+- Values may not contain custom-block marker text, so no generated line can look
+  like a custom block; `renvoy diff` counts custom lines reliably.
 - The `${git.branch}` rules cover more tool settings (`VIRTUAL_ENV`, `PYENV_*`,
   `*_FILES`, `*_DIRS`, `*_HOST`, `SONAR_*`, `COMPOSE_*`, and others).
 - Jenkinsfile custom blocks treat strings at the top level as code (`'agent'
   'any'` is refused) and allow escaped `\${...}`; pom.xml custom content must use
   unprefixed names, unique attributes, and legal XML characters.
-- Near-miss marker detection is broad again (any spelling or separator after
-  "renvoy", including `begin`/`end`/`start`/`stop`), restoring `--force`
-  protection for misspelled custom blocks that round 7's narrower pattern lost;
-  the marker-text check on `renvoy.yaml` covers every string field.
+- The marker-text check on `renvoy.yaml` covers every string field.
 - pom.xml custom content may not use `:` in names or character references to
   illegal XML characters; cron items are parsed strictly (no zero steps, reversed
   ranges, or malformed items); Java custom code may use division.
+- `--force` saves the file it replaces as `<file>.renvoy-backup` (numbered when one
+  exists, never through a symlink), so it cannot lose content. This replaces the
+  misspelled-marker heuristic, which could not be both safe and free of false
+  positives: legitimate files that mention "renvoy end" now regenerate normally.
+- pom.xml custom checks use the token stream for names and skip comments and CDATA
+  for character references, so colons and references in comments are accepted;
+  cron steps may equal the field width.

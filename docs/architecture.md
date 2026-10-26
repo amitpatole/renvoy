@@ -105,7 +105,7 @@ the file on disk:
 | nothing | create |
 | identical | unchanged |
 | unedited Renvoy output | update |
-| edited, hand-written, or foreign | refuse (exit 4), or overwrite with `--force` |
+| edited, hand-written, or foreign | refuse (exit 4), or with `--force` save a `.renvoy-backup` copy and overwrite |
 | malformed custom block, symlink, non-regular file | refuse, even with `--force` |
 
 Writes refuse to follow symbolic links in any path component under the output

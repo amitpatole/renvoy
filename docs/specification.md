@@ -237,24 +237,25 @@ Custom content may only add to a file:
   declarations, or processing instructions.
 - **Every format:** valid UTF-8 without carriage returns, Unicode line separators
   (NEL, LS, PS), or invisible format characters (BOM, zero-width, bidirectional
-  controls), and no tabs in YAML, all of which parsers read differently. A comment
-  line you add that looks like a marker in any syntax or spelling (for example
-  `# renvoy:begin cusom`, `// renvoy-begin`, or `# RENVOY:START`) counts as a
-  marker attempt, so a misspelled block is refused rather than overwritten by
-  `--force`. YAML custom
-  blocks are limited to 256 KiB and 10,000 nodes. Values in `renvoy.yaml` may not
-  contain marker text (`renvoy:begin custom` / `renvoy:end custom`).
+  controls), and no tabs in YAML, all of which parsers read differently. YAML
+  custom blocks are limited to 256 KiB and 10,000 nodes. Values in `renvoy.yaml`
+  may not contain marker text (`renvoy:begin custom` / `renvoy:end custom`).
 
 `renvoy diff` notes each file whose custom block holds content, because that
 content is preserved but not described by `renvoy.yaml`.
 
-Content that would change the generated part, or a near-miss marker, is refused.
+Content that would change the generated part is refused. Only the exact marker
+lines delimit a custom block; a misspelled marker is ordinary edited content.
 
 `renvoy generate` replaces a file only when it is new, or when Renvoy generated it
 and nobody edited it outside the custom block (the checksum still matches).
 Otherwise it stops with exit code 4 and writes nothing; review with `renvoy diff`
-and pass `--force` to replace the file. Custom blocks are kept even with
-`--force`, and a malformed custom block is never overwritten.
+and pass `--force` to replace the file. With `--force`, Renvoy first saves the
+current file next to it as `<file>.renvoy-backup` (then `.renvoy-backup.1`, and so
+on), so nothing is lost, including content between misspelled markers. Providers
+ignore these backups; delete them or add `*.renvoy-backup*` to `.gitignore`.
+Custom blocks are kept with `--force`, and a structurally malformed custom block
+(two openings, no closing) is never overwritten.
 
 ## Command line
 

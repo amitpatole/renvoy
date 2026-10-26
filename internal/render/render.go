@@ -66,17 +66,10 @@ type block struct {
 	begin, end int // line indexes of the markers
 }
 
-// markerMention catches near-miss markers (any case or spacing) so they are
-// refused instead of silently ignored.
-// It is deliberately broad: "renvoy", a few separators of any kind (spaces, NBSP,
-// colons, hyphens, invisible characters), then begin/end/start/stop. Identical
-// lines in the generated output are excused by the caller.
-var markerMention = regexp.MustCompile(`(?i)renvoy[^A-Za-z0-9]{0,8}(?:begin|end|start|stop)`)
-
-// findBlock locates the custom block in lines. It returns ok=false when there is none.
-// findBlock locates the custom block. nearMiss, when set, decides whether a line
-// that mentions a marker without being one should be refused.
-func findBlock(lines []string, st style, nearMiss func(trimmed string) bool) (block, bool, error) {
+// findBlock locates the custom block by its exact marker lines. Lines that only
+// resemble markers are ordinary content: --force keeps a backup of any file it
+// replaces, so data safety does not depend on recognizing misspellings.
+func findBlock(lines []string, st style) (block, bool, error) {
 	b := block{begin: -1, end: -1}
 	for i, line := range lines {
 		trimmed := strings.TrimSpace(line)
@@ -94,13 +87,6 @@ func findBlock(lines []string, st style, nearMiss func(trimmed string) bool) (bl
 				return b, false, fmt.Errorf("%w: line %d closes a second custom block", ErrMalformedCustomBlock, i+1)
 			}
 			b.end = i
-		default:
-			// Any mention of a marker, in any comment syntax, means someone meant a
-			// custom block; refusing keeps --force from discarding its content.
-			if nearMiss != nil && markerMention.MatchString(trimmed) && nearMiss(trimmed) {
-				return b, false, fmt.Errorf("%w: line %d has an unrecognized marker %q (expected %q or %q)",
-					ErrMalformedCustomBlock, i+1, trimmed, st.line(BeginMarker), st.line(EndMarker))
-			}
 		}
 	}
 	switch {
@@ -130,22 +116,8 @@ func joinLines(lines []string) []byte {
 
 // ExtractCustom returns the lines inside an existing file's custom block.
 func ExtractCustom(content []byte, st style) ([]string, bool, error) {
-	return extractCustom(content, st, commentLike)
-}
-
-// commentLike reports lines that look like comments in any supported syntax.
-func commentLike(trimmed string) bool {
-	for _, p := range []string{"#", "//", "/*", "*", "<!--", "--", ";"} {
-		if strings.HasPrefix(trimmed, p) {
-			return true
-		}
-	}
-	return false
-}
-
-func extractCustom(content []byte, st style, nearMiss func(string) bool) ([]string, bool, error) {
 	lines := splitLines(bytes.ReplaceAll(content, []byte("\r\n"), []byte("\n")))
-	b, ok, err := findBlock(lines, st, nearMiss)
+	b, ok, err := findBlock(lines, st)
 	if err != nil || !ok {
 		return nil, ok, err
 	}
@@ -177,7 +149,7 @@ func header(st style, source, sum string) []string {
 // inner lines removed, so custom edits never invalidate it.
 func Checksum(content []byte, st style) (string, error) {
 	lines := splitLines(content)
-	b, ok, err := findBlock(lines, st, nil)
+	b, ok, err := findBlock(lines, st)
 	if err != nil {
 		return "", err
 	}
@@ -237,28 +209,12 @@ func Finalize(f providers.GeneratedFile, source string, existing []byte) ([]byte
 	if existing != nil {
 		var ok bool
 		var err error
-		// A near-miss marker is a comment line the user added; text that is also
-		// in the generated output (a step name, a script line) is Renvoy's own.
-		generatedLines := map[string]int{}
-		for _, l := range body {
-			generatedLines[strings.TrimSpace(l)]++
-		}
-		custom, ok, err = extractCustom(existing, st, func(t string) bool {
-			if !commentLike(t) {
-				return false
-			}
-			// Each generated copy excuses one occurrence; any extra is the user's.
-			if generatedLines[t] > 0 {
-				generatedLines[t]--
-				return false
-			}
-			return true
-		})
+		custom, ok, err = ExtractCustom(existing, st)
 		if err != nil {
 			return nil, err
 		}
 		if ok {
-			b, found, err := findBlock(body, st, nil)
+			b, found, err := findBlock(body, st)
 			if err != nil {
 				return nil, err
 			}
@@ -344,10 +300,10 @@ func checkCustom(f providers.GeneratedFile, generated, combined []byte, custom [
 				return errors.New("the custom block may not contain DOCTYPE, ENTITY, ATTLIST, or other declarations")
 			}
 		}
-		if xmlColonName.MatchString(text) {
-			return errors.New("the custom block uses a ':' in an element or attribute name, which pom.xml does not support")
-		}
-		for _, m := range xmlCharRef.FindAllStringSubmatch(text, -1) {
+		// Character references are decoded before Go's checks see them (a
+		// surrogate becomes U+FFFD), so check them on the text outside comments
+		// and CDATA, where they are literal.
+		for _, m := range xmlCharRef.FindAllStringSubmatch(xmlLiteralSections.ReplaceAllString(text, ""), -1) {
 			n, err := strconv.ParseInt(strings.TrimPrefix(strings.ToLower(m[1]), "x"), map[bool]int{true: 16, false: 10}[strings.HasPrefix(strings.ToLower(m[1]), "x")], 32)
 			if err != nil || !isXMLChar(rune(n)) {
 				return fmt.Errorf("the custom block has the character reference &#%s;, which is not a legal XML character", m[1])
@@ -620,11 +576,17 @@ func checkXMLToken(tok xml.Token) error {
 	}
 	switch t := tok.(type) {
 	case xml.StartElement:
+		if strings.Contains(t.Name.Local, ":") {
+			return fmt.Errorf("the custom block uses ':' in the element name %q, which pom.xml does not support", t.Name.Local)
+		}
 		if t.Name.Space != "" {
 			return fmt.Errorf("the custom block uses the namespace prefix %q, which pom.xml does not declare", t.Name.Space)
 		}
 		seen := map[string]bool{}
 		for _, a := range t.Attr {
+			if strings.Contains(a.Name.Local, ":") {
+				return fmt.Errorf("the custom block uses ':' in the attribute name %q, which pom.xml does not support", a.Name.Local)
+			}
 			key := a.Name.Space + ":" + a.Name.Local
 			if seen[key] {
 				return fmt.Errorf("the custom block repeats the attribute %q", a.Name.Local)
@@ -646,8 +608,8 @@ func checkXMLToken(tok xml.Token) error {
 }
 
 var (
-	// xmlColonName finds a ':' in an element name or an attribute name.
-	xmlColonName = regexp.MustCompile(`</?[^\s!?/>]*:|\s[^\s=<>"']*:[^\s=<>"']*\s*=`)
+	// xmlLiteralSections matches comments and CDATA, whose content is literal.
+	xmlLiteralSections = regexp.MustCompile(`(?s)<!--.*?-->|<!\[CDATA\[.*?\]\]>`)
 	// xmlCharRef finds numeric character references.
 	xmlCharRef = regexp.MustCompile(`&#([xX][0-9A-Fa-f]+|[0-9]+);`)
 )

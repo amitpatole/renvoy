@@ -191,6 +191,10 @@ func TestCustomBlockPoliciesPerProvider(t *testing.T) {
 		{"pom trailing colon name", "bamboo-java", "bamboo-specs/pom.xml", []string{"    <a:/>"}, false},
 		{"pom surrogate char ref", "bamboo-java", "bamboo-specs/pom.xml", []string{"    <dependency>&#xD800;</dependency>"}, false},
 		{"pom legal char ref", "bamboo-java", "bamboo-specs/pom.xml", []string{"    <dependency><groupId>&#x41;</groupId></dependency>"}, true},
+		{"pom colon in comment", "bamboo-java", "bamboo-specs/pom.xml", []string{"    <!-- see https://example.com/docs?a=b and -Dfoo:bar=1 -->"}, true},
+		{"pom colon in text", "bamboo-java", "bamboo-specs/pom.xml", []string{"    <dependency><groupId>ratio x:y = 3</groupId></dependency>"}, true},
+		{"pom colon and char ref in CDATA", "bamboo-java", "bamboo-specs/pom.xml", []string{"    <dependency><groupId><![CDATA[ a:b = c &#0; ]]></groupId></dependency>"}, true},
+		{"pom char ref in comment", "bamboo-java", "bamboo-specs/pom.xml", []string{"    <!-- &#1; -->"}, true},
 		{"java division", "bamboo-java", java, []string{"    Plan customize(Plan plan) { int x = 4 / 2; return plan; }"}, true},
 		{"jenkins division still refused", "jenkins", "Jenkinsfile", []string{"    post { always { echo 'x' } } // a", "    def y = 4 / 2"}, false},
 	}

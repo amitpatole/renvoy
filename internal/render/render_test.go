@@ -1,6 +1,7 @@
 package render_test
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -33,7 +34,7 @@ func plan(t *testing.T, root string, f providers.GeneratedFile, force bool) (ren
 
 func write(t *testing.T, root string, p render.Planned) {
 	t.Helper()
-	if err := render.Write(root, []render.Planned{p}); err != nil {
+	if _, err := render.Write(root, []render.Planned{p}); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -124,7 +125,6 @@ func TestMalformedCustomBlockIsNeverErased(t *testing.T) {
 		"unclosed":      "# renvoy:begin custom\nkeep: me\n",
 		"stray end":     "# renvoy:end custom\n",
 		"two blocks":    "# renvoy:begin custom\n# renvoy:end custom\n# renvoy:begin custom\n# renvoy:end custom\n",
-		"misspelled":    "# renvoy:begin  custom-ish\n",
 		"invalid yaml":  "# renvoy:begin custom\na: [unclosed\n# renvoy:end custom\n",
 		"duplicate key": "# renvoy:begin custom\na: 2\n# renvoy:end custom\n",
 	}
@@ -277,20 +277,6 @@ func TestCustomBlocksCannotChangeGeneratedContent(t *testing.T) {
 	}
 }
 
-func TestMarkerCaseVariantsAreRefused(t *testing.T) {
-	root := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(root, "ci"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	content := "# Renvoy:begin custom\nkeep: me\n# Renvoy:end custom\n"
-	if err := os.WriteFile(filepath.Join(root, "ci", "out.yml"), []byte(content), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if _, c := plan(t, root, file("a: 1"), true); len(c) != 1 {
-		t.Fatalf("a case-variant marker must block --force, got %v", c)
-	}
-}
-
 func TestSafeSourceIsXMLCommentSafe(t *testing.T) {
 	if got := render.SafeSource("my--ci---x.yaml"); got != "my-ci-x.yaml" {
 		t.Fatalf("SafeSource = %q", got)
@@ -328,78 +314,89 @@ func TestCustomBlockParserDifferentialsAreRefused(t *testing.T) {
 	}
 }
 
-// Markers written in another comment syntax are still marker attempts; refusing
-// keeps --force from discarding the content between them.
-func TestForeignSyntaxMarkersAreRefused(t *testing.T) {
-	for _, content := range []string{
-		"/* renvoy:begin custom */\nkeep: me\n/* renvoy:end custom */\n",
-		"// renvoy:begin custom\nkeep: me\n// renvoy:end custom\n",
-		"<!-- renvoy:begin custom -->\nkeep: me\n<!-- renvoy:end custom -->\n",
-	} {
-		root := t.TempDir()
-		if err := os.MkdirAll(filepath.Join(root, "ci"), 0o755); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(filepath.Join(root, "ci", "out.yml"), []byte(content), 0o644); err != nil {
-			t.Fatal(err)
-		}
-		if _, c := plan(t, root, file("a: 1"), true); len(c) != 1 {
-			t.Errorf("--force accepted foreign markers in %q", content)
-		}
-	}
-}
-
-// Round 7: a generated line excuses only as many identical near-miss lines as it
-// accounts for; an extra copy is the user's and must block --force.
-func TestNearMissCountsGeneratedCopies(t *testing.T) {
-	gen := providers.GeneratedFile{Path: "ci/out.yml", Comment: "#", YAML: true,
-		Content: []byte("a: 1\n# renvoy:begin custom2\n# renvoy:end custom2\n\n" + render.CustomBlock("#", ""))}
-	root := t.TempDir()
-	out, err := render.Finalize(gen, "renvoy.yaml", nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	existing := strings.Replace(string(out), "# renvoy:begin custom\n",
-		"# renvoy:begin custom2\nconcurrency: keepme\n# renvoy:end custom2\n# renvoy:begin custom\n", 1)
-	if err := os.MkdirAll(filepath.Join(root, "ci"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(root, "ci", "out.yml"), []byte(existing), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if _, c := plan(t, root, gen, true); len(c) != 1 {
-		t.Fatalf("--force would drop custom content between extra near-miss markers, conflicts: %v", c)
-	}
-}
-
-// Round 8: misspelled markers in any form are marker attempts, so --force must
-// refuse rather than discard the content between them.
-func TestNearMissMarkerVariantsBlockForce(t *testing.T) {
-	gen := providers.GeneratedFile{Path: "ci/out.yml", Comment: "#", YAML: true,
-		Content: []byte("a: 1\n\n" + render.CustomBlock("#", ""))}
+// --force replaces edited files, so it saves the previous content first. Data
+// safety therefore does not depend on recognizing misspelled markers.
+func TestForceAlwaysKeepsABackup(t *testing.T) {
 	for _, v := range [][2]string{
+		{"# renvoy:begin  custom-ish", "# renvoy:end  custom-ish"},
+		{"# Renvoy:begin custom", "# Renvoy:end custom"},
+		{"/* renvoy:begin custom */", "/* renvoy:end custom */"},
+		{"// renvoy:begin custom", "// renvoy:end custom"},
 		{"# renvoy:begin cusom", "# renvoy:end cusom"},
-		{"# renvoy:begin", "# renvoy:end"},
-		{"# renvoy:begin-custom", "# renvoy:end-custom"},
-		{"# renvoy:begin\u00a0custom", "# renvoy:end\u00a0custom"},
+		{"# renvoy:custom begin", "# renvoy:custom end"},
+		{"# renvoi:begin", "# renvoi:end"},
 		{"# renvoy\u00a0:begin custom", "# renvoy\u00a0:end custom"},
-		{"# renvoy:begin cus\u00adtom", "# renvoy:end cus\u00adtom"},
-		{"#renvoy:begin cutom", "#renvoy:end cutom"},
-		{"# renvoy begin custom", "# renvoy end custom"},
-		{"# renvoy-begin-custom", "# renvoy-end-custom"},
-		{"# renvoy_begin_custom", "# renvoy_end_custom"},
+		{"# ren\u200bvoy:begin custom", "# ren\u200bvoy:end custom"},
 		{"# RENVOY:START", "# RENVOY:STOP"},
 	} {
 		root := t.TempDir()
-		if err := os.MkdirAll(filepath.Join(root, "ci"), 0o755); err != nil {
-			t.Fatal(err)
-		}
 		existing := "a: 1\n" + v[0] + "\nkeep: me\n" + v[1] + "\n"
-		if err := os.WriteFile(filepath.Join(root, "ci", "out.yml"), []byte(existing), 0o644); err != nil {
+		target := filepath.Join(root, "ci", "out.yml")
+		if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
 			t.Fatal(err)
 		}
-		if _, c := plan(t, root, gen, true); len(c) != 1 {
-			t.Errorf("--force would discard content between %q and %q", v[0], v[1])
+		if err := os.WriteFile(target, []byte(existing), 0o644); err != nil {
+			t.Fatal(err)
 		}
+		if _, c := plan(t, root, file("a: 1"), false); len(c) != 1 {
+			t.Fatalf("%q: without --force the edited file must be refused", v[0])
+		}
+		p, c := plan(t, root, file("a: 1"), true)
+		if len(c) != 0 || p.Action != render.Overwrite {
+			t.Fatalf("%q: action=%s conflicts=%v", v[0], p.Action, c)
+		}
+		backups, err := render.Write(root, []render.Planned{p})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(backups) != 1 || backups[0].BackupPath != "ci/out.yml.renvoy-backup" {
+			t.Fatalf("%q: backups = %v", v[0], backups)
+		}
+		saved, err := os.ReadFile(filepath.Join(root, "ci", "out.yml.renvoy-backup"))
+		if err != nil || string(saved) != existing {
+			t.Fatalf("%q: backup does not hold the previous content: %v %q", v[0], err, saved)
+		}
+	}
+}
+
+// A second forced replacement must not overwrite the first backup.
+func TestBackupsAreNumbered(t *testing.T) {
+	root := t.TempDir()
+	target := filepath.Join(root, "ci", "out.yml")
+	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for i, want := range []string{"ci/out.yml.renvoy-backup", "ci/out.yml.renvoy-backup.1"} {
+		if err := os.WriteFile(target, []byte(fmt.Sprintf("hand: %d\n", i)), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		p, _ := plan(t, root, file("a: 1"), true)
+		backups, err := render.Write(root, []render.Planned{p})
+		if err != nil || len(backups) != 1 || backups[0].BackupPath != want {
+			t.Fatalf("backup %d = %v, %v; want %s", i, backups, err, want)
+		}
+	}
+}
+
+// Backups never follow a symlink planted at the backup path.
+func TestBackupRefusesSymlink(t *testing.T) {
+	root := t.TempDir()
+	target := filepath.Join(root, "ci", "out.yml")
+	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(target, []byte("hand: written\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	victim := filepath.Join(t.TempDir(), "victim")
+	if err := os.Symlink(victim, target+".renvoy-backup"); err != nil {
+		t.Skip(err)
+	}
+	p, _ := plan(t, root, file("a: 1"), true)
+	if _, err := render.Write(root, []render.Planned{p}); err == nil {
+		t.Fatal("wrote a backup through a symlink")
+	}
+	if _, err := os.Stat(victim); err == nil {
+		t.Fatal("the symlink target was written")
 	}
 }
