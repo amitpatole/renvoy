@@ -95,3 +95,15 @@ All notable changes to this project are documented here. The format follows
   trailing-space keys, pom.xml declarations other than comments and CDATA, and
   pipeline-wide Jenkinsfile directives; markers in any comment syntax are treated
   as markers.
+- Matrix budget checks no longer loop per combination, so an oversized matrix with
+  a container image fails immediately instead of hanging validation.
+- Build arguments follow the same `${git.branch}` rules as environment variables
+  (Docker applies `HTTP_PROXY` and similar to every `RUN`).
+- Jenkinsfile custom blocks are checked against an allowlist (only `post`
+  sections at the top level), closing quoted-name and line-continuation bypasses;
+  `${...}` is refused only inside double-quoted strings.
+- Custom content must be valid UTF-8 and YAML custom content may not contain tabs;
+  the generated pom.xml sets `project.build.sourceEncoding` to UTF-8.
+- The `${git.branch}` allowlist matches whole words and adds `ENV`, `ENVIRONMENT`,
+  `CHANNEL`, `TARGET`, `URL`, and `SLUG`; step names or scripts that mention a
+  marker no longer block generation; a custom GitLab `pages` job is allowed.

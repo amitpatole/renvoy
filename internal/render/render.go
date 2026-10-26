@@ -16,6 +16,7 @@ import (
 	"slices"
 	"strings"
 	"unicode"
+	"unicode/utf8"
 
 	"go.yaml.in/yaml/v3"
 
@@ -69,7 +70,9 @@ type block struct {
 var markerMention = regexp.MustCompile(`(?i)renvoy:\s*(begin|end)\b`)
 
 // findBlock locates the custom block in lines. It returns ok=false when there is none.
-func findBlock(lines []string, st style) (block, bool, error) {
+// findBlock locates the custom block. nearMiss, when set, decides whether a line
+// that mentions a marker without being one should be refused.
+func findBlock(lines []string, st style, nearMiss func(trimmed string) bool) (block, bool, error) {
 	b := block{begin: -1, end: -1}
 	for i, line := range lines {
 		trimmed := strings.TrimSpace(line)
@@ -90,7 +93,7 @@ func findBlock(lines []string, st style) (block, bool, error) {
 		default:
 			// Any mention of a marker, in any comment syntax, means someone meant a
 			// custom block; refusing keeps --force from discarding its content.
-			if markerMention.MatchString(trimmed) {
+			if nearMiss != nil && markerMention.MatchString(trimmed) && nearMiss(trimmed) {
 				return b, false, fmt.Errorf("%w: line %d has an unrecognized marker %q (expected %q or %q)",
 					ErrMalformedCustomBlock, i+1, trimmed, st.line(BeginMarker), st.line(EndMarker))
 			}
@@ -123,8 +126,22 @@ func joinLines(lines []string) []byte {
 
 // ExtractCustom returns the lines inside an existing file's custom block.
 func ExtractCustom(content []byte, st style) ([]string, bool, error) {
+	return extractCustom(content, st, commentLike)
+}
+
+// commentLike reports lines that look like comments in any supported syntax.
+func commentLike(trimmed string) bool {
+	for _, p := range []string{"#", "//", "/*", "*", "<!--", "--", ";"} {
+		if strings.HasPrefix(trimmed, p) {
+			return true
+		}
+	}
+	return false
+}
+
+func extractCustom(content []byte, st style, nearMiss func(string) bool) ([]string, bool, error) {
 	lines := splitLines(bytes.ReplaceAll(content, []byte("\r\n"), []byte("\n")))
-	b, ok, err := findBlock(lines, st)
+	b, ok, err := findBlock(lines, st, nearMiss)
 	if err != nil || !ok {
 		return nil, ok, err
 	}
@@ -156,7 +173,7 @@ func header(st style, source, sum string) []string {
 // inner lines removed, so custom edits never invalidate it.
 func Checksum(content []byte, st style) (string, error) {
 	lines := splitLines(content)
-	b, ok, err := findBlock(lines, st)
+	b, ok, err := findBlock(lines, st, nil)
 	if err != nil {
 		return "", err
 	}
@@ -216,12 +233,20 @@ func Finalize(f providers.GeneratedFile, source string, existing []byte) ([]byte
 	if existing != nil {
 		var ok bool
 		var err error
-		custom, ok, err = ExtractCustom(existing, st)
+		// A near-miss marker is a comment line the user added; text that is also
+		// in the generated output (a step name, a script line) is Renvoy's own.
+		generatedLines := map[string]bool{}
+		for _, l := range body {
+			generatedLines[strings.TrimSpace(l)] = true
+		}
+		custom, ok, err = extractCustom(existing, st, func(t string) bool {
+			return commentLike(t) && !generatedLines[t]
+		})
 		if err != nil {
 			return nil, err
 		}
 		if ok {
-			b, found, err := findBlock(body, st)
+			b, found, err := findBlock(body, st, nil)
 			if err != nil {
 				return nil, err
 			}
@@ -254,6 +279,12 @@ func Finalize(f providers.GeneratedFile, source string, existing []byte) ([]byte
 // change the generated part, so renvoy.yaml stays an accurate description of it.
 func checkCustom(f providers.GeneratedFile, generated, combined []byte, custom []string) error {
 	text := strings.Join(custom, "\n")
+	if !utf8.ValidString(text) {
+		return errors.New("the custom block is not valid UTF-8, so tools reading it with other encodings may see different code")
+	}
+	if f.YAML && strings.Contains(text, "\t") {
+		return errors.New("the custom block contains a tab, which YAML parsers handle differently; use spaces")
+	}
 	// Java, Groovy, and YAML 1.1 parsers treat these as line breaks; the checks
 	// below split on \n only, so they could hide a line from them.
 	if i := strings.IndexAny(text, "\r\u0085\u2028\u2029"); i >= 0 {
@@ -311,26 +342,29 @@ func checkCustom(f providers.GeneratedFile, generated, combined []byte, custom [
 		if strings.Contains(code, `\u`) {
 			return errors.New(`the custom block contains a \u escape, which the compiler decodes before reading the code`)
 		}
-		// Groovy interpolation (${...}) is code inside a string, which the bracket
-		// check treats as text.
-		if path.Base(f.Path) == "Jenkinsfile" && strings.Contains(code, "${") {
-			return errors.New("the custom block uses ${...} string interpolation; use concatenation such as 'x' + env.NAME")
-		}
+		jenkins := path.Base(f.Path) == "Jenkinsfile"
 		var top strings.Builder
+		interpolates := false
 		if err := balanced(code, func(c byte, depth int) {
 			if depth == 0 {
 				top.WriteByte(c)
 			}
+		}, func(quote, body string) {
+			// Groovy evaluates ${...} inside double-quoted strings as code, which
+			// the bracket check treats as text. Single-quoted strings are literal.
+			if strings.HasPrefix(quote, `"`) && strings.Contains(body, "${") {
+				interpolates = true
+			}
 		}); err != nil {
 			return fmt.Errorf("the custom block could change the generated code around it: %w", err)
 		}
-		// Pipeline-level directives apply to every generated stage; only post
-		// sections may be added at the custom block's top level.
-		if path.Base(f.Path) == "Jenkinsfile" {
-			if m := pipelineDirectiveRe.FindString(top.String()); m != "" {
-				return fmt.Errorf("the custom block adds the pipeline-wide %q directive, which applies to every generated stage; set it in renvoy.yaml or use a post section",
-					strings.TrimRight(strings.TrimSpace(m), "{( "))
-			}
+		if jenkins && interpolates {
+			return errors.New("the custom block uses ${...} in a double-quoted string; use single quotes or concatenation such as 'x' + env.NAME")
+		}
+		// Only post sections may be added at the top of the pipeline block: any
+		// other pipeline-level directive would apply to every generated stage.
+		if jenkins && !postOnlyRe.MatchString(top.String()) {
+			return errors.New("the custom block may only add post { ... } sections at its top level; pipeline-wide directives apply to every generated stage")
 		}
 	}
 	return nil
@@ -403,8 +437,9 @@ func plainCustomYAML(custom string, generated map[string]any, policy providers.C
 // names may contain spaces, dots, and colons but not end with a space.
 var customKeyRe = regexp.MustCompile(`^\.?[A-Za-z_](?:[A-Za-z0-9_.: -]*[A-Za-z0-9_.:-])?$`)
 
-// pipelineDirectiveRe finds Declarative directives that apply to the whole pipeline.
-var pipelineDirectiveRe = regexp.MustCompile(`\b(?:agent|environment|options|parameters|tools|triggers|libraries|stages|input|when|matrix)\s*[{(]`)
+// postOnlyRe matches top-level custom Jenkinsfile code made only of post sections
+// (inner content is excluded, strings and comments are blanked).
+var postOnlyRe = regexp.MustCompile(`^\s*(?:post\s*\{\s*)*$`)
 
 // yaml11Special lists plain scalars YAML 1.1 parsers resolve to non-strings.
 var yaml11Special = map[string]bool{"y": true, "yes": true, "n": true, "no": true, "on": true, "off": true,
@@ -431,9 +466,12 @@ func singleYAMLDocument(b []byte) error {
 // balanced reports unbalanced brackets. When code is non-nil it is called with
 // each character outside strings and comments and the bracket depth before it
 // (strings and comments are reported as a single space).
-func balanced(src string, code func(c byte, depth int)) error {
+func balanced(src string, code func(c byte, depth int), onString func(quote, body string)) error {
 	if code == nil {
 		code = func(byte, int) {}
+	}
+	if onString == nil {
+		onString = func(string, string) {}
 	}
 	var stack []byte
 	closing := map[byte]byte{')': '(', ']': '[', '}': '{'}
@@ -465,6 +503,7 @@ func balanced(src string, code func(c byte, depth int)) error {
 			if j >= len(rest) {
 				return errors.New("unterminated string")
 			}
+			onString(q, rest[3:j])
 			code(' ', len(stack))
 			i += j + 3
 		case rest[0] == '"' || rest[0] == '\'':
@@ -481,6 +520,7 @@ func balanced(src string, code func(c byte, depth int)) error {
 			if j >= len(rest) {
 				return errors.New("unterminated string")
 			}
+			onString(string(q), rest[1:j])
 			code(' ', len(stack))
 			i += j + 1
 		default:

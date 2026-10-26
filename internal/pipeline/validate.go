@@ -193,9 +193,11 @@ func (v *validator) checkBudgets() {
 		return out
 	}
 	for _, j := range v.p.AllJobs() {
+		// n saturates just above the limit, so huge matrices cannot overflow or
+		// drive the work below; checkMatrix reports the limit itself.
 		n, axisBytes := 1, 0
 		for _, a := range j.Matrix {
-			n *= max(len(a.Values), 1)
+			n = min(n*max(len(a.Values), 1), MaxMatrixCombinations+1)
 			longest := 0
 			for _, val := range a.Values {
 				longest = max(longest, len(val))
@@ -209,9 +211,9 @@ func (v *validator) checkBudgets() {
 		count(vals(j.Env)...)
 		if j.Container != nil {
 			// Azure resolves the image once per matrix combination.
-			for i := 0; i < n; i++ {
-				count(j.Container.Image)
-			}
+			before := inlined
+			count(j.Container.Image)
+			inlined += (inlined - before) * (n - 1)
 		}
 		for _, s := range j.Steps {
 			count(s.Run)
@@ -577,7 +579,7 @@ var (
 		"MFLAGS": true, "GNUMAKEFLAGS": true, "MAKE": true,
 	}
 	sensitivePrefixes = []string{"LD_", "DYLD_", "BASH_", "GIT_", "CI_", "FF_", "DOCKER_", "XDG_", "NPM_CONFIG_",
-		"PIP_", "SSL_", "CURL_", "GITHUB_", "RUNNER_", "ACTIONS_", "SYSTEM_", "AGENT_", "BUILD_", "BAMBOO_",
+		"PIP_", "PIPENV_", "SSL_", "CURL_", "GITHUB_", "RUNNER_", "ACTIONS_", "SYSTEM_", "AGENT_", "BUILD_", "BAMBOO_",
 		"JENKINS_", "KUBE", "PYTHON", "PERL", "RUBY", "JAVA", "NODE_", "GRADLE_", "MAVEN_", "CARGO_", "GO",
 		"UV_", "TF_", "AWS_", "GOOGLE_", "AZURE_", "ARM_", "BUNDLE_", "COMPOSER_", "RUSTC", "RUSTUP_", "CONDA",
 		"POETRY_", "YARN_", "PNPM_", "DENO_", "HELM_", "ANSIBLE_", "VAULT_", "SSH_", "GPG", "GNUPG"}
@@ -587,7 +589,7 @@ var (
 
 // neutralBranchNameRe is the allowlist for variables that may carry a branch name:
 // names that describe the value rather than configure a tool.
-var neutralBranchNameRe = regexp.MustCompile(`(?:BRANCH|REF|TAG|VERSION|NAME|LABEL)`)
+var neutralBranchNameRe = regexp.MustCompile(`(?:^|_)(?:BRANCH|REF|TAG|VERSION|NAME|LABEL|ENV|ENVIRONMENT|CHANNEL|TARGET|URL|SLUG)(?:_|$)`)
 
 // isSensitiveEnvName reports names that must never carry untrusted values.
 func isSensitiveEnvName(name string) bool {
@@ -615,7 +617,7 @@ func (v *validator) checkControlEnv(path, name, value string) {
 	if err == nil && slices.Contains(t.Refs(), Ref{Namespace: NSGit, Name: GitBranch}) &&
 		(isSensitiveEnvName(name) || !neutralBranchNameRe.MatchString(strings.ToUpper(name))) {
 		v.errorf(path, "%s cannot be set from ${git.branch}: only neutral names such as BRANCH_NAME or IMAGE_TAG may carry a branch name, because tools act on many variables", name).
-			Hint = "use a name containing BRANCH, REF, TAG, VERSION, NAME, or LABEL"
+			Hint = "use a name with one of the words BRANCH, REF, TAG, VERSION, NAME, LABEL, ENV, ENVIRONMENT, CHANNEL, TARGET, URL, or SLUG, such as DEPLOY_ENV"
 		return
 	}
 	if !isControlEnvName(name) {
@@ -854,6 +856,9 @@ func (v *validator) checkStep(path string, s *Step, j *Job, axes map[string]bool
 			ap := JoinKey(path+".buildImage.buildArgs", a.Name)
 			v.checkEnvName(ap, a.Name, "build argument")
 			v.checkTemplate(ap, a.Value, axes, NSVariables, NSGit, NSMatrix)
+			// Docker applies predefined args such as HTTP_PROXY to every RUN, and
+			// declared args become environment variables, so the env rules apply.
+			v.checkControlEnv(ap, a.Name, a.Value)
 		}
 	case StepPushImage:
 		v.checkImage(path+".pushImage.image", s.PushImage.Image, axes)

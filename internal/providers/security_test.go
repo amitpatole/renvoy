@@ -175,6 +175,13 @@ func TestCustomBlockPoliciesPerProvider(t *testing.T) {
 		{"jenkins pipeline options", "jenkins", "Jenkinsfile", []string{"    options { retry(2) }"}, false},
 		{"jenkins pipeline environment", "jenkins", "Jenkinsfile", []string{"    environment { X = 'MARKER' }"}, false},
 		{"jenkins nested options in post is fine", "jenkins", "Jenkinsfile", []string{"    post { always { echo 'options { }' } }"}, true},
+		{"jenkins quoted directive name", "jenkins", "Jenkinsfile", []string{"    'options' { retry(2) }"}, false},
+		{"jenkins line continuation", "jenkins", "Jenkinsfile", []string{"    options \\", "    { retry(2) }"}, false},
+		{"jenkins single-quoted shell variable", "jenkins", "Jenkinsfile", []string{"    post { always { sh 'echo ${VAR}' } }"}, true},
+		{"jenkins two post-like sections only", "jenkins", "Jenkinsfile", []string{"    post { failure { echo 'x' } }"}, true},
+		{"java invalid utf-8", "bamboo-java", java, []string{"    Plan customize(Plan plan) { return plan; }", "    // x\xff\xfe"}, false},
+		{"gitlab tab in value", "gitlab", ".gitlab-ci.yml", []string{"extra:", "  script: [\"a\tb\"]", "  variables: {X: \"a\tb\"}"}, false},
+		{"gitlab pages job", "gitlab", ".gitlab-ci.yml", []string{"pages:", "  script: [make site]", "  artifacts: {paths: [public/]}"}, true},
 	}
 	for _, c := range cases {
 		f, existing := customExisting(t, c.provider, c.path, c.lines...)

@@ -318,3 +318,16 @@ func TestDiffReportsCustomContent(t *testing.T) {
 		t.Fatalf("stderr: %s", r.stderr)
 	}
 }
+
+// Round 6: text that merely mentions a marker in generated output (a step name)
+// is Renvoy's own and must not block generation, first time or later.
+func TestStepNamesMentioningMarkersAreFine(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "renvoy.yaml"), strings.Replace(app.Starter,
+		"          - run: pip install -r requirements.txt\n",
+		"          - name: \"Renvoy: end-to-end tests\"\n            run: |\n              # renvoy: begin\n              pip install -r requirements.txt\n", 1)+bambooKeys)
+	for i := 0; i < 2; i++ {
+		r := run(t, dir, "generate", "--all")
+		expectCode(t, r, app.ExitOK)
+	}
+}

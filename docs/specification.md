@@ -47,11 +47,13 @@ dependency graph, and naming rules that a schema cannot express.
   or git behave (`BASH_ENV`, `ENV`, `PATH`, `LD_PRELOAD`, `NODE_OPTIONS`,
   `PYTHONSTARTUP`, `JAVA_TOOL_OPTIONS`, `GIT_SSH_COMMAND`, `GIT_CONFIG_*`, and
   similar) produce a warning and cannot be matrix axes.
-- **Branch names in variables.** `${git.branch}` may only set variables whose names
-  describe the value (they contain `BRANCH`, `REF`, `TAG`, `VERSION`, `NAME`, or
-  `LABEL`, such as `BRANCH_NAME` or `IMAGE_TAG`) and do not select programs,
-  configuration, directories, proxies, or CI runner behavior (`GIT_*`, `CI_*`,
-  `BUILD_*`, `*_FILE`, `*_OPTS`, `*PATH`, and similar).
+- **Branch names in variables.** `${git.branch}` may only set environment variables
+  and build arguments whose names describe the value, meaning they contain one of
+  the words `BRANCH`, `REF`, `TAG`, `VERSION`, `NAME`, `LABEL`, `ENV`, `ENVIRONMENT`,
+  `CHANNEL`, `TARGET`, `URL`, or `SLUG` (for example `BRANCH_NAME`, `IMAGE_TAG`,
+  `DEPLOY_ENV`), and do not select programs, configuration, directories, proxies,
+  or CI runner behavior (`GIT_*`, `CI_*`, `BUILD_*`, `*_FILE`, `*_OPTS`, `*PATH`,
+  `HTTP_PROXY`, and similar).
 - **Duplicate keys** in `variables`, `env`, `with`, `buildArgs`, and `matrix` are errors.
 - **Paths.** Paths are relative to the workspace, use `/`, never contain `..`, and
   never start with `-`.
@@ -218,16 +220,18 @@ Custom content may only add to a file:
 - **Jenkinsfile and Java Specs:** balanced code without `\u` escapes and without a
   bare `/` outside strings and comments (division, regular expression literals,
   and Groovy slashy strings), whose extent the check cannot determine. Jenkinsfile
-  custom code may not use `${...}` interpolation (use concatenation) and may only
-  add `post` sections at its top level; pipeline-wide directives such as `options`,
-  `environment`, `tools`, and `agent` apply to every generated stage. The Java
-  Specs `customize(Plan)` method is intentionally free to change the plan.
+  custom code may only add `post { ... }` sections at its top level (pipeline-wide
+  directives such as `options`, `environment`, `tools`, and `agent` would apply to
+  every generated stage) and may not use `${...}` inside double-quoted strings
+  (single-quoted strings such as `sh 'echo ${VAR}'` are fine). The Java Specs
+  `customize(Plan)` method is intentionally free to change the plan.
 - **pom.xml:** well-formed elements, comments, and CDATA only; no DOCTYPE, ENTITY,
   ATTLIST, other declarations, or processing instructions.
-- **Every format:** no carriage returns, Unicode line separators (NEL, LS, PS), or
-  invisible format characters (BOM, zero-width, bidirectional controls), which
-  parsers read differently. A marker written in any comment syntax counts as a
-  marker, so a misspelled block is refused rather than overwritten by `--force`.
+- **Every format:** valid UTF-8 without carriage returns, Unicode line separators
+  (NEL, LS, PS), or invisible format characters (BOM, zero-width, bidirectional
+  controls), and no tabs in YAML, all of which parsers read differently. A comment
+  line you add that names a marker in any syntax counts as a marker, so a
+  misspelled block is refused rather than overwritten by `--force`.
 
 `renvoy diff` notes each file whose custom block holds content, because that
 content is preserved but not described by `renvoy.yaml`.

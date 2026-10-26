@@ -4,6 +4,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/amitpatole/renvoy/internal/diagnostics"
 	"github.com/amitpatole/renvoy/internal/pipeline"
@@ -249,4 +250,61 @@ func TestMatrixAxisLimits(t *testing.T) {
 	}
 	_, diags = parse(t, b.String())
 	expectError(t, diags, "stages", "bytes of matrix entries")
+}
+
+// Round 6: a matrix far over the combination limit must fail fast, not loop once
+// per combination (5 KB of input previously hung validation).
+func TestHugeMatrixFailsFast(t *testing.T) {
+	var vals []string
+	for i := 0; i < 100; i++ {
+		vals = append(vals, "v"+strconv.Itoa(i))
+	}
+	var axes strings.Builder
+	for i := 0; i < 5; i++ {
+		axes.WriteString("          a" + strconv.Itoa(i) + ": [" + strings.Join(vals, ", ") + "]\n")
+	}
+	src := strings.Replace(minimal, "      - name: unit\n",
+		"      - name: unit\n        container:\n          image: python:${matrix.a0}\n        matrix:\n"+axes.String(), 1)
+	done := make(chan diagnostics.List, 1)
+	go func() {
+		_, diags := parse(t, src)
+		done <- diags
+	}()
+	select {
+	case diags := <-done:
+		expectError(t, diags, "stages[0].jobs[0].matrix", "more than 256")
+	case <-time.After(5 * time.Second):
+		t.Fatal("validation did not finish")
+	}
+}
+
+// Round 6: Docker applies predefined args such as HTTP_PROXY to every RUN, so
+// build arguments follow the same branch-name rules as env.
+func TestBuildArgsFollowBranchRules(t *testing.T) {
+	for _, name := range []string{"HTTP_PROXY", "https_proxy", "NODE_OPTIONS", "PIP_INDEX_URL"} {
+		src := strings.Replace(minimal, "          - run: make test\n",
+			"          - buildImage:\n              image: app:1\n              buildArgs:\n                "+name+": '${git.branch}'\n", 1)
+		_, diags := parse(t, src)
+		expectError(t, diags, "stages[0].jobs[0].steps[0].buildImage.buildArgs."+name, "cannot be set from ${git.branch}")
+	}
+	ok := strings.Replace(minimal, "          - run: make test\n",
+		"          - buildImage:\n              image: app:1\n              buildArgs:\n                GIT_BRANCH_NAME: x\n                SOURCE_BRANCH: '${git.branch}'\n", 1)
+	if _, diags := parse(t, ok); diags.HasErrors() {
+		t.Fatalf("neutral build arguments must be accepted:\n%s", render(diags))
+	}
+}
+
+// Round 6: the allowlist matches whole words, not substrings.
+func TestBranchAllowlistMatchesWholeWords(t *testing.T) {
+	for _, name := range []string{"HOSTNAME", "STAGE", "PREFIX", "LOGNAME", "PIPENV_CUSTOM_VENV_NAME"} {
+		src := strings.Replace(minimal, "        steps:\n", "        env:\n          "+name+": '${git.branch}'\n        steps:\n", 1)
+		_, diags := parse(t, src)
+		expectError(t, diags, "stages[0].jobs[0].env."+name, "cannot be set from ${git.branch}")
+	}
+	for _, name := range []string{"DEPLOY_ENV", "APP_ENVIRONMENT", "RELEASE_CHANNEL", "DEPLOY_TARGET", "PREVIEW_URL", "BRANCH_SLUG"} {
+		src := strings.Replace(minimal, "        steps:\n", "        env:\n          "+name+": '${git.branch}'\n        steps:\n", 1)
+		if _, diags := parse(t, src); diags.HasErrors() {
+			t.Errorf("%s should accept a branch value:\n%s", name, render(diags))
+		}
+	}
 }

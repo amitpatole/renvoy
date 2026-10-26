@@ -91,6 +91,10 @@ func pom(pkg, name, version string) string {
   <version>1.0.0</version>
   <packaging>jar</packaging>
 
+  <properties>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+  </properties>
+
   <dependencies>
     <dependency>
       <groupId>com.atlassian.bamboo</groupId>

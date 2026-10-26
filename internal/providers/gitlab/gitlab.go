@@ -89,6 +89,10 @@ var (
 	// reservedKeys are top-level .gitlab-ci.yml keywords that cannot be job names.
 	reservedKeys = []string{"image", "services", "stages", "types", "before_script", "after_script",
 		"variables", "cache", "include", "workflow", "default", "pages", "spec"}
+	// globalKeys apply to every job, so custom blocks may not add them. A custom
+	// "pages" job is fine: it is a job, not a global setting.
+	globalKeys = []string{"image", "services", "stages", "types", "before_script", "after_script",
+		"variables", "cache", "include", "workflow", "default", "spec"}
 	defaultTags = map[string][]string{
 		pipeline.OSWindows: {"saas-windows-medium-amd64"},
 		pipeline.OSMacOS:   {"saas-macos-medium-m1"},
@@ -259,7 +263,7 @@ func (pr *Provider) Render(_ context.Context, p *pipeline.Pipeline, _ providers.
 	body = append(body, '\n')
 	body = append(body, render.CustomBlock(providers.CommentHash, "")...)
 	return []providers.GeneratedFile{{Path: ".gitlab-ci.yml", Content: body, Comment: providers.CommentHash, YAML: true,
-		CustomKeys: providers.CustomKeyPolicy{Denied: append([]string{"spec"}, reservedKeys...)}}}, nil
+		CustomKeys: providers.CustomKeyPolicy{Denied: globalKeys}}}, nil
 }
 
 type renderer struct {
