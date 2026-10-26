@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -378,7 +379,8 @@ func TestBackupsAreNumbered(t *testing.T) {
 	}
 }
 
-// Backups never follow a symlink planted at the backup path.
+// A symlink planted at the backup path is reported while planning, before any
+// file is written, and is never followed.
 func TestBackupRefusesSymlink(t *testing.T) {
 	root := t.TempDir()
 	target := filepath.Join(root, "ci", "out.yml")
@@ -392,11 +394,52 @@ func TestBackupRefusesSymlink(t *testing.T) {
 	if err := os.Symlink(victim, target+".renvoy-backup"); err != nil {
 		t.Skip(err)
 	}
-	p, _ := plan(t, root, file("a: 1"), true)
-	if _, err := render.Write(root, []render.Planned{p}); err == nil {
-		t.Fatal("wrote a backup through a symlink")
+	if _, c := plan(t, root, file("a: 1"), true); len(c) != 1 || !strings.Contains(c[0].Reason, "cannot back up") {
+		t.Fatalf("conflicts = %v", c)
 	}
 	if _, err := os.Stat(victim); err == nil {
 		t.Fatal("the symlink target was written")
+	}
+	if data, _ := os.ReadFile(target); string(data) != "hand: written\n" {
+		t.Fatal("the target was changed")
+	}
+}
+
+// The backup keeps the replaced file's permissions, so a private file stays private.
+func TestBackupKeepsPermissions(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX permissions")
+	}
+	root := t.TempDir()
+	target := filepath.Join(root, "ci", "out.yml")
+	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(target, []byte("hand: written\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	p, _ := plan(t, root, file("a: 1"), true)
+	if _, err := render.Write(root, []render.Planned{p}); err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Stat(target + ".renvoy-backup")
+	if err != nil || info.Mode().Perm() != 0o600 {
+		t.Fatalf("backup mode = %v, %v; want 0600", info.Mode().Perm(), err)
+	}
+}
+
+// Files over the read limit are refused with a hint that fits the cause.
+func TestOversizedTargetHint(t *testing.T) {
+	root := t.TempDir()
+	target := filepath.Join(root, "ci", "out.yml")
+	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(target, make([]byte, render.MaxExistingSize+1), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	_, c := plan(t, root, file("a: 1"), true)
+	if len(c) != 1 || !strings.Contains(c[0].Hint, "move or shorten the file") {
+		t.Fatalf("conflicts = %v", c)
 	}
 }

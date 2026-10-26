@@ -33,6 +33,8 @@ type Planned struct {
 	Action   Action
 
 	comment, commentEnd string
+	backupPath          string      // set for Overwrite: where the previous content goes
+	existingMode        fs.FileMode // permissions of the existing file
 }
 
 // Conflict explains why a file cannot be written safely.
@@ -74,11 +76,14 @@ func Plan(root string, files []providers.GeneratedFile, source string, force boo
 		if err != nil {
 			return nil, nil, err
 		}
-		existing, err := readExisting(root, f.Path)
+		existing, mode, err := readExisting(root, f.Path)
 		var unsafe *unsafePathError
 		if errors.As(err, &unsafe) {
-			conflicts = append(conflicts, Conflict{Path: f.Path, Reason: unsafe.reason,
-				Hint: "Renvoy never writes through symbolic links or over non-regular files"})
+			hint := unsafe.hint
+			if hint == "" {
+				hint = "Renvoy never writes through symbolic links or over non-regular files"
+			}
+			conflicts = append(conflicts, Conflict{Path: f.Path, Reason: unsafe.reason, Hint: hint})
 			continue
 		}
 		if err != nil {
@@ -93,7 +98,8 @@ func Plan(root string, files []providers.GeneratedFile, source string, force boo
 			}
 			return nil, nil, err
 		}
-		p := Planned{Path: f.Path, Abs: abs, Content: content, Existing: existing, comment: f.Comment, commentEnd: f.CommentEnd}
+		p := Planned{Path: f.Path, Abs: abs, Content: content, Existing: existing, comment: f.Comment,
+			commentEnd: f.CommentEnd, existingMode: mode}
 		switch {
 		case existing == nil:
 			p.Action = Create
@@ -103,6 +109,19 @@ func Plan(root string, files []providers.GeneratedFile, source string, force boo
 			p.Action = Update
 		case force:
 			p.Action = Overwrite
+			// Resolve the backup now, so a bad backup path is reported before
+			// anything is written.
+			backup, err := freeBackupPath(root, f.Path)
+			if err != nil {
+				reason := err.Error()
+				if errors.As(err, &unsafe) {
+					reason = unsafe.reason
+				}
+				conflicts = append(conflicts, Conflict{Path: f.Path, Reason: "cannot back up the existing file: " + reason,
+					Hint: "remove or rename the file at the backup path, then run again"})
+				continue
+			}
+			p.backupPath = backup
 		default:
 			reason := "the file was edited outside its custom block"
 			if !IsGenerated(existing, f) {
@@ -124,7 +143,7 @@ func targetPath(root, rel string) (string, error) {
 	return filepath.Join(root, filepath.FromSlash(rel)), nil
 }
 
-type unsafePathError struct{ reason string }
+type unsafePathError struct{ reason, hint string }
 
 func (e *unsafePathError) Error() string { return e.reason }
 
@@ -143,39 +162,44 @@ func checkComponents(root, rel string) error {
 			return err
 		}
 		if info.Mode()&fs.ModeSymlink != 0 {
-			return &unsafePathError{fmt.Sprintf("%s is a symbolic link", strings.Join(parts[:i+1], "/"))}
+			return &unsafePathError{reason: fmt.Sprintf("%s is a symbolic link", strings.Join(parts[:i+1], "/"))}
 		}
 		last := i == len(parts)-1
 		if !last && !info.IsDir() {
-			return &unsafePathError{fmt.Sprintf("%s is not a directory", strings.Join(parts[:i+1], "/"))}
+			return &unsafePathError{reason: fmt.Sprintf("%s is not a directory", strings.Join(parts[:i+1], "/"))}
 		}
 		if last && !info.Mode().IsRegular() {
-			return &unsafePathError{fmt.Sprintf("%s is not a regular file", rel)}
+			return &unsafePathError{reason: fmt.Sprintf("%s is not a regular file", rel)}
 		}
 	}
 	return nil
 }
 
-func readExisting(root, rel string) ([]byte, error) {
+func readExisting(root, rel string) ([]byte, fs.FileMode, error) {
 	if err := checkComponents(root, rel); err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	f, err := os.Open(filepath.Join(root, filepath.FromSlash(rel)))
 	if errors.Is(err, fs.ErrNotExist) {
-		return nil, nil
+		return nil, 0, nil
 	}
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	defer func() { _ = f.Close() }()
+	info, err := f.Stat()
+	if err != nil {
+		return nil, 0, err
+	}
 	data, err := io.ReadAll(io.LimitReader(f, MaxExistingSize+1))
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	if len(data) > MaxExistingSize {
-		return nil, &unsafePathError{fmt.Sprintf("%s is larger than %d bytes", rel, MaxExistingSize)}
+		return nil, 0, &unsafePathError{reason: fmt.Sprintf("%s is larger than %d bytes", rel, MaxExistingSize),
+			hint: "Renvoy does not read files this large, even with --force; move or shorten the file, then run again"}
 	}
-	return data, nil
+	return data, info.Mode().Perm(), nil
 }
 
 // Backup records where a replaced file's previous content was saved.
@@ -207,16 +231,21 @@ func Write(root string, planned []Planned) ([]Backup, error) {
 			return backups, fmt.Errorf("%s: %w", p.Path, err)
 		}
 		if p.Action == Overwrite {
-			rel, err := freeBackupPath(root, p.Path)
-			if err != nil {
+			// Re-check the planned backup path: it must still be free and safe.
+			rel := p.backupPath
+			if err := checkComponents(root, rel); err != nil {
 				return backups, fmt.Errorf("%s: %w", p.Path, err)
 			}
-			if err := writeAtomic(dir, filepath.Join(root, filepath.FromSlash(rel)), p.Existing); err != nil {
+			if _, err := os.Lstat(filepath.Join(root, filepath.FromSlash(rel))); !errors.Is(err, fs.ErrNotExist) {
+				return backups, fmt.Errorf("%s: %s appeared after planning; run again", p.Path, rel)
+			}
+			// The backup keeps the original permissions, so a private file stays private.
+			if err := writeAtomic(dir, filepath.Join(root, filepath.FromSlash(rel)), p.Existing, p.existingMode); err != nil {
 				return backups, fmt.Errorf("%s: backing up: %w", p.Path, err)
 			}
 			backups = append(backups, Backup{Path: p.Path, BackupPath: rel})
 		}
-		if err := writeAtomic(dir, p.Abs, p.Content); err != nil {
+		if err := writeAtomic(dir, p.Abs, p.Content, 0o644); err != nil {
 			return backups, fmt.Errorf("%s: %w", p.Path, err)
 		}
 	}
@@ -241,7 +270,7 @@ func freeBackupPath(root, rel string) (string, error) {
 	return "", errors.New("too many existing backups; remove old .renvoy-backup files")
 }
 
-func writeAtomic(dir, target string, content []byte) error {
+func writeAtomic(dir, target string, content []byte, mode fs.FileMode) error {
 	tmp, err := os.CreateTemp(dir, ".renvoy-*.tmp")
 	if err != nil {
 		return err
@@ -252,7 +281,7 @@ func writeAtomic(dir, target string, content []byte) error {
 		_ = tmp.Close()
 		return err
 	}
-	if err := tmp.Chmod(0o644); err != nil {
+	if err := tmp.Chmod(mode); err != nil {
 		_ = tmp.Close()
 		return err
 	}

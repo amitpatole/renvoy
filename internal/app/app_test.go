@@ -358,3 +358,26 @@ func TestForcePrintsBackup(t *testing.T) {
 		t.Fatalf("backup content = %q", data)
 	}
 }
+
+// Round 10: a bad backup path for one file stops --all --force before anything
+// is written, keeping the validate-before-write promise.
+func TestForceWritesNothingWhenABackupPathIsUnsafe(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "renvoy.yaml"), app.Starter+bambooKeys)
+	writeFile(t, filepath.Join(dir, ".gitlab-ci.yml"), "hand: gitlab\n")
+	writeFile(t, filepath.Join(dir, "Jenkinsfile"), "hand: jenkins\n")
+	if err := os.Symlink(filepath.Join(t.TempDir(), "victim"), filepath.Join(dir, "Jenkinsfile.renvoy-backup")); err != nil {
+		t.Skip(err)
+	}
+	r := run(t, dir, "generate", "--all", "--force")
+	expectCode(t, r, app.ExitUnsafeOverwrite)
+	if data, _ := os.ReadFile(filepath.Join(dir, ".gitlab-ci.yml")); string(data) != "hand: gitlab\n" {
+		t.Fatal(".gitlab-ci.yml was replaced before the run was refused")
+	}
+	if _, err := os.Stat(filepath.Join(dir, ".gitlab-ci.yml.renvoy-backup")); err == nil {
+		t.Fatal("a backup was written before the run was refused")
+	}
+	if _, err := os.Stat(filepath.Join(dir, ".github")); err == nil {
+		t.Fatal("new files were created before the run was refused")
+	}
+}

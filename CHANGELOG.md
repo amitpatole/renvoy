@@ -127,3 +127,6 @@ All notable changes to this project are documented here. The format follows
 - pom.xml custom checks use the token stream for names and skip comments and CDATA
   for character references, so colons and references in comments are accepted;
   cron steps may equal the field width.
+- Backup paths are resolved and checked while planning, so an unusable backup path
+  refuses the whole run before any file is written; backups keep the replaced
+  file's permissions; files over the 4 MiB read limit get a hint that fits.
