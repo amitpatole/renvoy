@@ -6,7 +6,7 @@ info [bamboo-java] renvoy.yaml:
   using Bamboo Specs 12.1.12; it must match your Bamboo server version
   hint: set extensions.bamboo.specsVersion to your server version
 
-error [bamboo-java] renvoy.yaml:27:11 stages[0].jobs[0].env.GREETING:
+error [bamboo-java] renvoy.yaml:27:11 stages[0].jobs[0].env.BRANCH_GREETING:
   Bamboo task environment values cannot contain double quotes, backslashes, or line breaks
 
 error [bamboo-java] renvoy.yaml:38:15 stages[0].jobs[0].steps[1].env.SAFE:

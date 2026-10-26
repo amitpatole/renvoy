@@ -38,6 +38,13 @@ const MaxInlinedBytes = 1 << 20
 // MaxTotalMatrixCombinations bounds matrix expansion across all jobs.
 const MaxTotalMatrixCombinations = 1024
 
+// MaxMatrixAxes bounds the axes of one matrix.
+const MaxMatrixAxes = 16
+
+// MaxMatrixBytes bounds matrix text multiplied by its combinations, since Azure
+// writes every axis into every combination.
+const MaxMatrixBytes = 1 << 20
+
 // MaxMatrixCombinations bounds matrix expansion.
 const MaxMatrixCombinations = 256
 
@@ -163,7 +170,7 @@ func (v *validator) run() {
 
 // checkBudgets bounds how much a pipeline can grow when providers render it.
 func (v *validator) checkBudgets() {
-	combos, inlined := 0, 0
+	combos, inlined, matrixBytes := 0, 0, 0
 	count := func(texts ...string) {
 		for _, s := range texts {
 			t, err := ParseTemplate(s)
@@ -186,11 +193,19 @@ func (v *validator) checkBudgets() {
 		return out
 	}
 	for _, j := range v.p.AllJobs() {
-		n := 1
+		n, axisBytes := 1, 0
 		for _, a := range j.Matrix {
 			n *= max(len(a.Values), 1)
+			longest := 0
+			for _, val := range a.Values {
+				longest = max(longest, len(val))
+			}
+			axisBytes += len(a.Name) + longest + 8
 		}
 		combos += n
+		if len(j.Matrix) > 0 {
+			matrixBytes += n * axisBytes
+		}
 		count(vals(j.Env)...)
 		if j.Container != nil {
 			// Azure resolves the image once per matrix combination.
@@ -214,6 +229,10 @@ func (v *validator) checkBudgets() {
 	if combos > MaxTotalMatrixCombinations+len(v.p.AllJobs()) {
 		v.errorf("stages", "matrix jobs expand to %d combinations in total; at most %d are supported", combos, MaxTotalMatrixCombinations)
 	}
+	if matrixBytes > MaxMatrixBytes {
+		v.errorf("stages", "matrix jobs would render about %d bytes of matrix entries; at most %d are supported", matrixBytes, MaxMatrixBytes).
+			Hint = "use fewer axes or shorter values"
+	}
 	if inlined > MaxInlinedBytes {
 		v.errorf("variables", "variable references expand to %d bytes; at most %d are supported", inlined, MaxInlinedBytes).
 			Hint = "reference large values from a file in the repository instead"
@@ -234,6 +253,10 @@ func (v *validator) checkName(path, name, what string) bool {
 }
 
 func (v *validator) checkEnvName(path, name, what string) {
+	if len(name) > 128 {
+		v.errorf(path, "%s name is %d characters; at most 128 are allowed", what, len(name))
+		return
+	}
 	if !envNameRe.MatchString(name) {
 		v.errorf(path, "invalid %s name %q", what, name).
 			Hint = "use letters, digits, and underscores, starting with a letter or underscore"
@@ -442,6 +465,10 @@ func (v *validator) checkMatrix(path string, m Matrix, axes map[string]bool) {
 		v.errorf(path, "matrix has no axes")
 		return
 	}
+	if len(m) > MaxMatrixAxes {
+		v.errorf(path, "matrix has %d axes; at most %d are allowed", len(m), MaxMatrixAxes)
+		return
+	}
 	combos := 1
 	for _, axis := range m {
 		ap := JoinKey(path, axis.Name)
@@ -558,6 +585,10 @@ var (
 		"_FILE", "FLAGS", "_WRAPPER", "_ARGS", "_CMD", "_BIN", "_EXE", "_SHELL", "_PROGRAM"}
 )
 
+// neutralBranchNameRe is the allowlist for variables that may carry a branch name:
+// names that describe the value rather than configure a tool.
+var neutralBranchNameRe = regexp.MustCompile(`(?:BRANCH|REF|TAG|VERSION|NAME|LABEL)`)
+
 // isSensitiveEnvName reports names that must never carry untrusted values.
 func isSensitiveEnvName(name string) bool {
 	up := strings.ToUpper(name)
@@ -581,9 +612,10 @@ func isSensitiveEnvName(name string) bool {
 // warns about author-set ones.
 func (v *validator) checkControlEnv(path, name, value string) {
 	t, err := ParseTemplate(value)
-	if err == nil && slices.Contains(t.Refs(), Ref{Namespace: NSGit, Name: GitBranch}) && isSensitiveEnvName(name) {
-		v.errorf(path, "%s cannot be set from ${git.branch}: shells, tools, or the CI runner act on this variable, so a branch name could change what runs", name).
-			Hint = "use a neutral name such as BRANCH_NAME"
+	if err == nil && slices.Contains(t.Refs(), Ref{Namespace: NSGit, Name: GitBranch}) &&
+		(isSensitiveEnvName(name) || !neutralBranchNameRe.MatchString(strings.ToUpper(name))) {
+		v.errorf(path, "%s cannot be set from ${git.branch}: only neutral names such as BRANCH_NAME or IMAGE_TAG may carry a branch name, because tools act on many variables", name).
+			Hint = "use a name containing BRANCH, REF, TAG, VERSION, NAME, or LABEL"
 		return
 	}
 	if !isControlEnvName(name) {

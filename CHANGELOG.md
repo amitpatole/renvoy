@@ -87,3 +87,11 @@ All notable changes to this project are documented here. The format follows
   custom code may not use `${...}` interpolation, and pom.xml custom content may
   not contain DOCTYPE, ENTITY, or processing instructions.
 - `renvoy diff` notes files whose custom block holds content.
+- `${git.branch}` may only set variables with neutral names (containing `BRANCH`,
+  `REF`, `TAG`, `VERSION`, `NAME`, or `LABEL`) instead of relying on a denylist.
+- Matrices are limited to 16 axes and 1 MiB of entries across combinations (Azure
+  writes every axis into every combination), and names to 128 characters.
+- Custom content rejects invisible format characters, float-like and
+  trailing-space keys, pom.xml declarations other than comments and CDATA, and
+  pipeline-wide Jenkinsfile directives; markers in any comment syntax are treated
+  as markers.

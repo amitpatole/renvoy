@@ -15,6 +15,7 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+	"unicode"
 
 	"go.yaml.in/yaml/v3"
 
@@ -87,7 +88,9 @@ func findBlock(lines []string, st style) (block, bool, error) {
 			}
 			b.end = i
 		default:
-			if markerMention.MatchString(trimmed) && strings.HasPrefix(trimmed, st.start) {
+			// Any mention of a marker, in any comment syntax, means someone meant a
+			// custom block; refusing keeps --force from discarding its content.
+			if markerMention.MatchString(trimmed) {
 				return b, false, fmt.Errorf("%w: line %d has an unrecognized marker %q (expected %q or %q)",
 					ErrMalformedCustomBlock, i+1, trimmed, st.line(BeginMarker), st.line(EndMarker))
 			}
@@ -256,6 +259,13 @@ func checkCustom(f providers.GeneratedFile, generated, combined []byte, custom [
 	if i := strings.IndexAny(text, "\r\u0085\u2028\u2029"); i >= 0 {
 		return fmt.Errorf("the custom block contains the line terminator %q, which parsers disagree on", []rune(text[i:])[0])
 	}
+	// Invisible format characters (BOM, zero-width, bidi controls) are read
+	// differently by parsers and hide what a reviewer sees.
+	for _, r := range text {
+		if unicode.Is(unicode.Cf, r) {
+			return fmt.Errorf("the custom block contains the invisible character %U", r)
+		}
+	}
 	switch {
 	case f.YAML:
 		if err := singleYAMLDocument(combined); err != nil {
@@ -277,9 +287,13 @@ func checkCustom(f providers.GeneratedFile, generated, combined []byte, custom [
 			return err
 		}
 	case f.Comment == providers.CommentXML:
-		lower := strings.ToLower(text)
-		if strings.Contains(lower, "<!doctype") || strings.Contains(lower, "<!entity") || strings.Contains(text, "<?") {
-			return errors.New("the custom block may not contain DOCTYPE, ENTITY, or processing instructions")
+		if strings.Contains(text, "<?") {
+			return errors.New("the custom block may not contain processing instructions")
+		}
+		for i := strings.Index(text, "<!"); i >= 0; i = nextIndex(text, "<!", i) {
+			if !strings.HasPrefix(text[i:], "<!--") && !strings.HasPrefix(text[i:], "<![CDATA[") {
+				return errors.New("the custom block may not contain DOCTYPE, ENTITY, ATTLIST, or other declarations")
+			}
 		}
 		dec := xml.NewDecoder(strings.NewReader("<custom>" + strings.Join(custom, "\n") + "</custom>"))
 		dec.Strict = true
@@ -302,8 +316,21 @@ func checkCustom(f providers.GeneratedFile, generated, combined []byte, custom [
 		if path.Base(f.Path) == "Jenkinsfile" && strings.Contains(code, "${") {
 			return errors.New("the custom block uses ${...} string interpolation; use concatenation such as 'x' + env.NAME")
 		}
-		if err := balanced(code); err != nil {
+		var top strings.Builder
+		if err := balanced(code, func(c byte, depth int) {
+			if depth == 0 {
+				top.WriteByte(c)
+			}
+		}); err != nil {
 			return fmt.Errorf("the custom block could change the generated code around it: %w", err)
+		}
+		// Pipeline-level directives apply to every generated stage; only post
+		// sections may be added at the custom block's top level.
+		if path.Base(f.Path) == "Jenkinsfile" {
+			if m := pipelineDirectiveRe.FindString(top.String()); m != "" {
+				return fmt.Errorf("the custom block adds the pipeline-wide %q directive, which applies to every generated stage; set it in renvoy.yaml or use a post section",
+					strings.TrimRight(strings.TrimSpace(m), "{( "))
+			}
 		}
 	}
 	return nil
@@ -348,11 +375,12 @@ func plainCustomYAML(custom string, generated map[string]any, policy providers.C
 		top := doc.Content[0]
 		for i := 0; i+1 < len(top.Content); i += 2 {
 			key := top.Content[i].Value
-			if !customKeyRe.MatchString(key) || yaml11Special[strings.ToLower(key)] {
+			if !customKeyRe.MatchString(key) || yaml11Special[strings.ToLower(key)] ||
+				strings.EqualFold(key, ".inf") || strings.EqualFold(key, ".nan") {
 				return fmt.Errorf("the custom block key %q must be a plain name; YAML 1.1 parsers may read it as a boolean, null, or number", key)
 			}
 			for k := range generated {
-				if strings.EqualFold(k, key) {
+				if strings.EqualFold(strings.TrimSpace(k), strings.TrimSpace(key)) {
 					return fmt.Errorf("the custom block redefines the generated %q key", k)
 				}
 			}
@@ -370,9 +398,13 @@ func plainCustomYAML(custom string, generated map[string]any, policy providers.C
 	return nil
 }
 
-// customKeyRe restricts custom top-level keys to plain names (job names may use
-// spaces, dots, and colons).
-var customKeyRe = regexp.MustCompile(`^[A-Za-z_.][A-Za-z0-9_.: -]*$`)
+// customKeyRe restricts custom top-level keys to plain names: an optional leading
+// dot (GitLab hidden jobs), a letter or underscore, then name characters; job
+// names may contain spaces, dots, and colons but not end with a space.
+var customKeyRe = regexp.MustCompile(`^\.?[A-Za-z_](?:[A-Za-z0-9_.: -]*[A-Za-z0-9_.:-])?$`)
+
+// pipelineDirectiveRe finds Declarative directives that apply to the whole pipeline.
+var pipelineDirectiveRe = regexp.MustCompile(`\b(?:agent|environment|options|parameters|tools|triggers|libraries|stages|input|when|matrix)\s*[{(]`)
 
 // yaml11Special lists plain scalars YAML 1.1 parsers resolve to non-strings.
 var yaml11Special = map[string]bool{"y": true, "yes": true, "n": true, "no": true, "on": true, "off": true,
@@ -396,23 +428,31 @@ func singleYAMLDocument(b []byte) error {
 
 // balanced checks that Groovy or Java code has matching brackets outside strings
 // and comments, so a custom block cannot close the generated scope it sits in.
-func balanced(code string) error {
+// balanced reports unbalanced brackets. When code is non-nil it is called with
+// each character outside strings and comments and the bracket depth before it
+// (strings and comments are reported as a single space).
+func balanced(src string, code func(c byte, depth int)) error {
+	if code == nil {
+		code = func(byte, int) {}
+	}
 	var stack []byte
 	closing := map[byte]byte{')': '(', ']': '[', '}': '{'}
-	for i := 0; i < len(code); {
-		rest := code[i:]
+	for i := 0; i < len(src); {
+		rest := src[i:]
 		switch {
 		case strings.HasPrefix(rest, "//"):
 			end := strings.IndexByte(rest, '\n')
 			if end < 0 {
 				end = len(rest)
 			}
+			code(' ', len(stack))
 			i += end
 		case strings.HasPrefix(rest, "/*"):
 			end := strings.Index(rest[2:], "*/")
 			if end < 0 {
 				return errors.New("unterminated block comment")
 			}
+			code(' ', len(stack))
 			i += end + 4
 		case strings.HasPrefix(rest, `"""`), strings.HasPrefix(rest, "'''"):
 			q := rest[:3]
@@ -425,6 +465,7 @@ func balanced(code string) error {
 			if j >= len(rest) {
 				return errors.New("unterminated string")
 			}
+			code(' ', len(stack))
 			i += j + 3
 		case rest[0] == '"' || rest[0] == '\'':
 			q := rest[0]
@@ -440,9 +481,11 @@ func balanced(code string) error {
 			if j >= len(rest) {
 				return errors.New("unterminated string")
 			}
+			code(' ', len(stack))
 			i += j + 1
 		default:
 			c := rest[0]
+			code(c, len(stack))
 			switch c {
 			case '(', '[', '{':
 				stack = append(stack, c)
@@ -463,4 +506,13 @@ func balanced(code string) error {
 		return fmt.Errorf("unclosed %q", stack[len(stack)-1])
 	}
 	return nil
+}
+
+// nextIndex finds the next occurrence of sub in s after position i.
+func nextIndex(s, sub string, i int) int {
+	j := strings.Index(s[i+1:], sub)
+	if j < 0 {
+		return -1
+	}
+	return i + 1 + j
 }

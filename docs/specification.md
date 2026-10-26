@@ -46,11 +46,12 @@ dependency graph, and naming rules that a schema cannot express.
 - **Control variables.** Environment variables that change how shells, runtimes,
   or git behave (`BASH_ENV`, `ENV`, `PATH`, `LD_PRELOAD`, `NODE_OPTIONS`,
   `PYTHONSTARTUP`, `JAVA_TOOL_OPTIONS`, `GIT_SSH_COMMAND`, `GIT_CONFIG_*`, and
-  similar) produce a warning and cannot be matrix axes. `${git.branch}` cannot set
-  any variable that selects programs, configuration, directories, proxies, or CI
-  runner behavior (for example `GIT_*`, `CI_*`, `KUBECONFIG`, `HOME`, `XDG_*`,
-  `DOCKER_*`, `AWS_*`, `TF_*`, `CC`, `MAKEFLAGS`, `*_OPTS`, `*PATH`, `*_HOME`,
-  `*_FILE`, `*FLAGS`, `*_ARGS`, `*_WRAPPER`); use a neutral name such as `BRANCH_NAME`.
+  similar) produce a warning and cannot be matrix axes.
+- **Branch names in variables.** `${git.branch}` may only set variables whose names
+  describe the value (they contain `BRANCH`, `REF`, `TAG`, `VERSION`, `NAME`, or
+  `LABEL`, such as `BRANCH_NAME` or `IMAGE_TAG`) and do not select programs,
+  configuration, directories, proxies, or CI runner behavior (`GIT_*`, `CI_*`,
+  `BUILD_*`, `*_FILE`, `*_OPTS`, `*PATH`, and similar).
 - **Duplicate keys** in `variables`, `env`, `with`, `buildArgs`, and `matrix` are errors.
 - **Paths.** Paths are relative to the workspace, use `/`, never contain `..`, and
   never start with `-`.
@@ -217,11 +218,16 @@ Custom content may only add to a file:
 - **Jenkinsfile and Java Specs:** balanced code without `\u` escapes and without a
   bare `/` outside strings and comments (division, regular expression literals,
   and Groovy slashy strings), whose extent the check cannot determine. Jenkinsfile
-  custom code may not use `${...}` interpolation; use concatenation.
-- **pom.xml:** well-formed elements, without DOCTYPE, ENTITY, or processing
-  instructions.
-- **Every format:** no carriage returns or Unicode line separators (NEL, LS, PS),
-  which some parsers treat as line breaks and others do not.
+  custom code may not use `${...}` interpolation (use concatenation) and may only
+  add `post` sections at its top level; pipeline-wide directives such as `options`,
+  `environment`, `tools`, and `agent` apply to every generated stage. The Java
+  Specs `customize(Plan)` method is intentionally free to change the plan.
+- **pom.xml:** well-formed elements, comments, and CDATA only; no DOCTYPE, ENTITY,
+  ATTLIST, other declarations, or processing instructions.
+- **Every format:** no carriage returns, Unicode line separators (NEL, LS, PS), or
+  invisible format characters (BOM, zero-width, bidirectional controls), which
+  parsers read differently. A marker written in any comment syntax counts as a
+  marker, so a misspelled block is refused rather than overwritten by `--force`.
 
 `renvoy diff` notes each file whose custom block holds content, because that
 content is preserved but not described by `renvoy.yaml`.
@@ -265,5 +271,6 @@ Config files are read up to 1 MiB, YAML documents up to 100,000 nodes (including
 nodes reached through aliases), pipelines up to 500 jobs, variable values up to
 4 KiB, 1 MiB of variable values substituted at references, 1,024 matrix
 combinations in total, branch and tag patterns up to 255 characters and 100 per
-list, 1 MiB of condition text repeated on dependent jobs, and generated or
-existing files up to 4 MiB.
+list, 1 MiB of condition text repeated on dependent jobs, 16 matrix axes per job,
+1 MiB of matrix entries (axis text times combinations), names up to 128
+characters, and generated or existing files up to 4 MiB.

@@ -167,6 +167,14 @@ func TestCustomBlockPoliciesPerProvider(t *testing.T) {
 		{"java lone CR (javac ends the comment)", "bamboo-java", java, []string{"    Plan customize(Plan plan) { return plan; }", "    // note\r } class Extra { static int marker = 42;", "    static int y = 1;"}, false},
 		{"pom doctype", "bamboo-java", "bamboo-specs/pom.xml", []string{"<!DOCTYPE x [<!ENTITY a \"b\">]>"}, false},
 		{"pom dependency", "bamboo-java", "bamboo-specs/pom.xml", []string{"    <dependency><groupId>a</groupId></dependency>"}, true},
+		{"pom attlist", "bamboo-java", "bamboo-specs/pom.xml", []string{"    <!ATTLIST dependency x CDATA #IMPLIED>"}, false},
+		{"pom cdata and comment", "bamboo-java", "bamboo-specs/pom.xml", []string{"    <!-- note --><dependency><groupId><![CDATA[a]]></groupId></dependency>"}, true},
+		{"gitlab BOM before key", "gitlab", ".gitlab-ci.yml", []string{"\ufeffnewjob:", "  script: [echo MARKER]"}, false},
+		{"gitlab float key", "gitlab", ".gitlab-ci.yml", []string{".inf:", "  script: [echo MARKER]"}, false},
+		{"gitlab trailing-space key", "gitlab", ".gitlab-ci.yml", []string{"\"variables \":", "  X: MARKER"}, false},
+		{"jenkins pipeline options", "jenkins", "Jenkinsfile", []string{"    options { retry(2) }"}, false},
+		{"jenkins pipeline environment", "jenkins", "Jenkinsfile", []string{"    environment { X = 'MARKER' }"}, false},
+		{"jenkins nested options in post is fine", "jenkins", "Jenkinsfile", []string{"    post { always { echo 'options { }' } }"}, true},
 	}
 	for _, c := range cases {
 		f, existing := customExisting(t, c.provider, c.path, c.lines...)

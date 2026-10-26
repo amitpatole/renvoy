@@ -1,4 +1,4 @@
-error [bamboo] renvoy.yaml:27:11 stages[0].jobs[0].env.GREETING:
+error [bamboo] renvoy.yaml:27:11 stages[0].jobs[0].env.BRANCH_GREETING:
   Bamboo task environment values cannot contain double quotes, backslashes, or line breaks
 
 error [bamboo] renvoy.yaml:38:15 stages[0].jobs[0].steps[1].env.SAFE:

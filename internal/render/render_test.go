@@ -327,3 +327,24 @@ func TestCustomBlockParserDifferentialsAreRefused(t *testing.T) {
 		}
 	}
 }
+
+// Markers written in another comment syntax are still marker attempts; refusing
+// keeps --force from discarding the content between them.
+func TestForeignSyntaxMarkersAreRefused(t *testing.T) {
+	for _, content := range []string{
+		"/* renvoy:begin custom */\nkeep: me\n/* renvoy:end custom */\n",
+		"// renvoy:begin custom\nkeep: me\n// renvoy:end custom\n",
+		"<!-- renvoy:begin custom -->\nkeep: me\n<!-- renvoy:end custom -->\n",
+	} {
+		root := t.TempDir()
+		if err := os.MkdirAll(filepath.Join(root, "ci"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(root, "ci", "out.yml"), []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if _, c := plan(t, root, file("a: 1"), true); len(c) != 1 {
+			t.Errorf("--force accepted foreign markers in %q", content)
+		}
+	}
+}

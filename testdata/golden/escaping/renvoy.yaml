@@ -24,7 +24,7 @@ stages:
     jobs:
       - name: quoting
         env:
-          GREETING: say "hi" to $USER at ${git.branch}
+          BRANCH_GREETING: say "hi" to $USER at ${git.branch}
         steps:
           - uses: checkout
           - name: It's a "named" step

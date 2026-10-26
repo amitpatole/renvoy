@@ -208,3 +208,45 @@ func TestPatternLimits(t *testing.T) {
 	_, diags = parse(t, strings.Replace(minimal, "push: {}", "push:\n    branches: ["+many+"]", 1))
 	expectError(t, diags, "triggers.push.branches", "at most 100")
 }
+
+// Round 5: branch values are allowed only in names that describe the value.
+func TestBranchValuesUseAnAllowlist(t *testing.T) {
+	for _, name := range []string{"LUA_INIT", "DOTNET_STARTUP_HOOKS", "VIMINIT", "PHPRC", "OPENSSL_CONF",
+		"COMSPEC", "ZDOTDIR", "LESSOPEN", "GREETING"} {
+		src := strings.Replace(minimal, "        steps:\n", "        env:\n          "+name+": 'x-${git.branch}'\n        steps:\n", 1)
+		_, diags := parse(t, src)
+		expectError(t, diags, "stages[0].jobs[0].env."+name, "cannot be set from ${git.branch}")
+	}
+	for _, name := range []string{"BRANCH_NAME", "IMAGE_TAG", "SOURCE_REF", "APP_VERSION", "image_label"} {
+		src := strings.Replace(minimal, "        steps:\n", "        env:\n          "+name+": 'x-${git.branch}'\n        steps:\n", 1)
+		if _, diags := parse(t, src); diags.HasErrors() {
+			t.Errorf("%s should accept a branch value:\n%s", name, render(diags))
+		}
+	}
+}
+
+// Round 5: Azure writes every axis into every combination, so axis text is budgeted.
+func TestMatrixAxisLimits(t *testing.T) {
+	var axes strings.Builder
+	for i := 0; i < pipeline.MaxMatrixAxes+1; i++ {
+		axes.WriteString("          a" + strconv.Itoa(i) + ": [x]\n")
+	}
+	_, diags := parse(t, strings.Replace(minimal, "        steps:\n", "        matrix:\n"+axes.String()+"        steps:\n", 1))
+	expectError(t, diags, "stages[0].jobs[0].matrix", "at most 16")
+
+	var b strings.Builder
+	b.WriteString(strings.Split(minimal, "stages:")[0] + "stages:\n  - name: test\n    jobs:\n")
+	long := strings.Repeat("v", 60)
+	for j := 0; j < 4; j++ {
+		b.WriteString("      - name: m" + strconv.Itoa(j) + "\n        matrix:\n")
+		for i := 0; i < 8; i++ {
+			b.WriteString("          b" + strconv.Itoa(i) + strings.Repeat("x", 60) + ": [p, q]\n")
+		}
+		for i := 0; i < 8; i++ {
+			b.WriteString("          c" + strconv.Itoa(i) + strings.Repeat("x", 60) + ": [" + long + "]\n")
+		}
+		b.WriteString("        steps:\n          - run: x\n")
+	}
+	_, diags = parse(t, b.String())
+	expectError(t, diags, "stages", "bytes of matrix entries")
+}
