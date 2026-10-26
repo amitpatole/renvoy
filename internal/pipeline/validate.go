@@ -384,6 +384,16 @@ func (v *validator) checkEnv(path string, env Vars, axes map[string]bool) {
 				Hint = "rename it; shadowing would change what ${...} references resolve to on some providers"
 		}
 		v.checkTemplate(ep, e.Value, axes, NSVariables, NSSecrets, NSGit, NSMatrix)
+		v.warnProviderSyntax(ep, e.Value)
+	}
+}
+
+// warnProviderSyntax flags provider expression syntax in values, which some
+// providers evaluate wherever it appears in the generated file.
+func (v *validator) warnProviderSyntax(path, value string) {
+	if strings.Contains(value, "${{") || strings.Contains(value, "$[") {
+		v.add(diagnostics.Warningf(path, "value contains provider expression syntax (${{ or $[), which some providers evaluate").
+			WithHint("use portable references such as ${secrets.NAME} or ${git.sha}"))
 	}
 }
 
@@ -549,10 +559,16 @@ func (v *validator) checkStep(path string, s *Step, j *Job, axes map[string]bool
 			v.errorf(path+".uses", "invalid reference %q", s.Uses)
 		}
 		for _, w := range s.With {
+			wp := JoinKey(path+".with", w.Name)
 			if !envNameRe.MatchString(strings.ReplaceAll(w.Name, "-", "_")) {
-				v.errorf(JoinKey(path+".with", w.Name), "invalid input name %q", w.Name)
+				v.errorf(wp, "invalid input name %q", w.Name)
 			}
-			v.checkTemplate(JoinKey(path+".with", w.Name), w.Value, axes, NSVariables, NSSecrets, NSGit, NSMatrix)
+			v.checkTemplate(wp, w.Value, axes, NSVariables, NSSecrets, NSGit, NSMatrix)
+			v.warnProviderSyntax(wp, w.Value)
+			if t, err := ParseTemplate(w.Value); err == nil && slices.Contains(t.Refs(), Ref{Namespace: NSGit, Name: GitBranch}) {
+				v.add(diagnostics.Warningf(wp, "${git.branch} is controlled by whoever names the branch and is passed to this step as-is").
+					WithHint("only pass it to inputs that are treated as plain data, never to inputs evaluated as code or scripts"))
+			}
 		}
 	case StepCache:
 		c := s.Cache

@@ -327,6 +327,15 @@ func checkEnvValue(path, value, provider string) diagnostics.List {
 		return diagnostics.List{diagnostics.Errorf(path,
 			"Bamboo task environment values cannot contain double quotes or line breaks").WithProvider(provider)}
 	}
+	// Bamboo substitutes variables into one K="v" string and then parses it, so a
+	// branch name containing quotes could add or change environment variables.
+	for _, ref := range pipeline.MustTemplate(value).Refs() {
+		if ref.Namespace == pipeline.NSGit && ref.Name == pipeline.GitBranch {
+			return diagnostics.List{diagnostics.Errorf(path,
+				"Bamboo cannot pass ${git.branch} through task environment variables safely; branch names can contain quotes").
+				WithHint("reference ${git.branch} in the run script instead").WithProvider(provider)}
+		}
+	}
 	return nil
 }
 

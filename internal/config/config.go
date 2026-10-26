@@ -43,11 +43,17 @@ var ErrNotFound = errors.New("config file not found")
 
 // Read loads a config file, refusing non-regular files and files over MaxFileSize.
 func Read(path string) ([]byte, error) {
-	f, err := os.Open(path)
-	if err != nil {
+	// Stat before opening: opening a FIFO for reading blocks until a writer appears.
+	if info, err := os.Stat(path); err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
 			return nil, fmt.Errorf("%w: %s", ErrNotFound, path)
 		}
+		return nil, err
+	} else if !info.Mode().IsRegular() {
+		return nil, fmt.Errorf("%s is not a regular file", path)
+	}
+	f, err := os.Open(path)
+	if err != nil {
 		return nil, err
 	}
 	defer func() { _ = f.Close() }()

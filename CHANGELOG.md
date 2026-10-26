@@ -27,3 +27,16 @@ All notable changes to this project are documented here. The format follows
   to overwrite edited files, and symlink-safe atomic writes.
 - A JSON Schema for editors, experimental plugin protocol types in `pkg/plugin`,
   examples, and documentation.
+
+### Security
+
+- Bamboo: `${git.branch}` is rejected in task environment values, where a branch
+  name containing quotes could alter the parsed environment.
+- Warnings when `${git.branch}` is passed to a reusable step input, and when
+  values contain provider expression syntax (`${{ }}`, `$[ ]`).
+- PowerShell quoting escapes typographic double quotes, which PowerShell treats as
+  string delimiters.
+- Diagnostics escape terminal control and bidirectional-override characters.
+- `renvoy` refuses a non-regular config file (such as a FIFO) before opening it.
+- The YAML spacing pass keeps the original text whenever spacing would change the
+  parsed document.

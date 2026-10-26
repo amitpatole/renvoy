@@ -187,6 +187,8 @@ func (l List) Sorted() List {
 }
 
 // WriteText writes diagnostics in the text format, one blank line apart.
+// Control and bidirectional-override characters from the input are escaped so
+// they cannot manipulate the terminal.
 func WriteText(w io.Writer, l List) error {
 	for i, d := range l {
 		if i > 0 {
@@ -194,11 +196,29 @@ func WriteText(w io.Writer, l List) error {
 				return err
 			}
 		}
-		if _, err := io.WriteString(w, d.String()+"\n"); err != nil {
+		if _, err := io.WriteString(w, Sanitize(d.String())+"\n"); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+// Sanitize escapes control characters (other than newline) and bidirectional
+// formatting characters so text is safe to print to a terminal.
+func Sanitize(s string) string {
+	var b strings.Builder
+	for _, r := range s {
+		switch {
+		case r == '\n':
+			b.WriteRune(r)
+		case r < 0x20 || r == 0x7f || (r >= 0x80 && r <= 0x9f),
+			r >= 0x202a && r <= 0x202e, r >= 0x2066 && r <= 0x2069, r == 0x200e || r == 0x200f || r == 0x061c:
+			fmt.Fprintf(&b, "\\u%04x", r)
+		default:
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
 }
 
 // Report is the JSON document emitted by --format json.

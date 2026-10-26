@@ -275,6 +275,10 @@ GitLab `artifacts:when: always`, Azure `succeededOrFailed()`, Jenkins
   script contains `${{`; do not put `$(name)` in values meant for Azure.
 - **Shells.** GitLab runs every script in the runner's shell, so `shell: pwsh` on a
   Linux job is an error there. Bamboo on Windows uses Windows PowerShell 5.1.
+- **Branch names in Bamboo environment variables.** Bamboo builds a task's
+  environment from one `K="v"` string after substituting variables, and branch
+  names can contain quotes, so `${git.branch}` in a job or step `env` value is an
+  error on Bamboo. Reference it in the script instead.
 
 ## Provider extensions
 

@@ -4,6 +4,7 @@ package shared
 import (
 	"bytes"
 	"fmt"
+	"reflect"
 	"slices"
 	"strconv"
 	"strings"
@@ -120,12 +121,23 @@ func Encode(m *Map, spaced ...string) ([]byte, error) {
 			out.WriteByte('\n')
 		}
 		if slices.Contains(spaced, part.Content[0].Value) {
-			out.Write(spaceChildren(buf.Bytes()))
+			out.Write(spaceSafely(buf.Bytes()))
 		} else {
 			out.Write(buf.Bytes())
 		}
 	}
 	return out.Bytes(), nil
+}
+
+// spaceSafely adds blank lines between second-level entries, keeping the
+// original text if spacing would change the parsed document.
+func spaceSafely(b []byte) []byte {
+	spaced := spaceChildren(b)
+	var before, after any
+	if yaml.Unmarshal(b, &before) != nil || yaml.Unmarshal(spaced, &after) != nil || !reflect.DeepEqual(before, after) {
+		return b
+	}
+	return spaced
 }
 
 // spaceChildren inserts a blank line before every second-level key after the first.

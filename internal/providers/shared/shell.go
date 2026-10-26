@@ -49,7 +49,8 @@ func Word(t pipeline.Template, shell string, name EnvName) string {
 		}
 		for _, r := range s.Literal {
 			if shell == pipeline.ShellPwsh {
-				if r == '`' || r == '"' || r == '$' {
+				// PowerShell also ends double-quoted strings at typographic quotes.
+				if r == '`' || r == '"' || r == '$' || r == '\u201c' || r == '\u201d' || r == '\u201e' {
 					b.WriteByte('`')
 				}
 			} else if r == '\\' || r == '"' || r == '$' || r == '`' {

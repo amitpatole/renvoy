@@ -164,6 +164,12 @@ or `${HOME}`, passes through unchanged. Write `$${` for a literal `${`.
 | `container.image` | variables, matrix |
 | everything else | none (literal) |
 
+`${git.branch}` comes from whoever creates the branch. Renvoy only passes it to
+scripts through environment variables, warns when it is given to a reusable step
+input (`with`), and refuses it in Bamboo environment values. Provider expression
+syntax (`${{ }}`, `$[ ]`) in values produces a warning because some providers
+evaluate it anywhere in the generated file.
+
 ## Generated files
 
 Generated files start with a header and a checksum:
