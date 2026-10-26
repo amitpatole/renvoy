@@ -25,6 +25,9 @@ var (
 	usesRefRe      = regexp.MustCompile(`^[^\s'"\x60$\\]+$`)
 )
 
+// MaxLabels bounds metadata.labels.
+const MaxLabels = 100
+
 // MaxJobs bounds the number of jobs, which bounds the dependency graph that every
 // provider walks. GitHub Actions itself allows 256 jobs per workflow.
 const MaxJobs = 500
@@ -91,6 +94,9 @@ func (v *validator) run() {
 		v.errorf("kind", "unsupported kind %q", p.Kind).Hint = "the only supported kind is Pipeline"
 	}
 	v.checkName("metadata.name", p.Metadata.Name, "pipeline")
+	if len(p.Metadata.Labels) > MaxLabels {
+		v.errorf("metadata.labels", "%d labels are defined; at most %d are allowed", len(p.Metadata.Labels), MaxLabels)
+	}
 	v.checkNoMarkers(reflect.ValueOf(p).Elem(), "")
 	v.checkTriggers()
 

@@ -443,3 +443,25 @@ func TestOversizedTargetHint(t *testing.T) {
 		t.Fatalf("conflicts = %v", c)
 	}
 }
+
+// Round 11: updating an unedited generated file keeps its permissions.
+func TestUpdateKeepsPermissions(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX permissions")
+	}
+	root := t.TempDir()
+	p, _ := plan(t, root, file("a: 1"), false)
+	write(t, root, p)
+	target := filepath.Join(root, "ci", "out.yml")
+	if err := os.Chmod(target, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	p, _ = plan(t, root, file("a: 2"), false)
+	if p.Action != render.Update {
+		t.Fatalf("action = %s", p.Action)
+	}
+	write(t, root, p)
+	if info, err := os.Stat(target); err != nil || info.Mode().Perm() != 0o600 {
+		t.Fatalf("mode after update = %v, %v; want 0600", info.Mode().Perm(), err)
+	}
+}

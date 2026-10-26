@@ -130,3 +130,8 @@ All notable changes to this project are documented here. The format follows
 - Backup paths are resolved and checked while planning, so an unusable backup path
   refuses the whole run before any file is written; backups keep the replaced
   file's permissions; files over the 4 MiB read limit get a hint that fits.
+- `metadata.labels` is limited to 100 entries and rejects duplicate keys, and
+  every plain mapping (such as provider extension settings) is limited to 256
+  entries and checked for duplicates before the YAML library decodes it, whose
+  duplicate check is quadratic (70k labels took 38 s; now 0.2 s).
+- Updating an unedited generated file keeps its permissions.

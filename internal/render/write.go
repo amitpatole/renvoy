@@ -245,7 +245,12 @@ func Write(root string, planned []Planned) ([]Backup, error) {
 			}
 			backups = append(backups, Backup{Path: p.Path, BackupPath: rel})
 		}
-		if err := writeAtomic(dir, p.Abs, p.Content, 0o644); err != nil {
+		// Rewrites keep the file's permissions; new files are created 0644.
+		mode := fs.FileMode(0o644)
+		if p.Existing != nil {
+			mode = p.existingMode
+		}
+		if err := writeAtomic(dir, p.Abs, p.Content, mode); err != nil {
 			return backups, fmt.Errorf("%s: %w", p.Path, err)
 		}
 	}

@@ -67,7 +67,7 @@ dependency graph, and naming rules that a schema cannot express.
 | --- | --- | --- |
 | `apiVersion` | yes | `renvoy.dev/v1alpha1` |
 | `kind` | yes | `Pipeline` |
-| `metadata` | yes | `name` (required), `description`, `labels` (string map) |
+| `metadata` | yes | `name` (required), `description`, `labels` (string map, at most 100) |
 | `triggers` | yes | At least one trigger. |
 | `variables` | no | Plain, non-secret values shared by every job. Values are literal. |
 | `secrets` | no | Names of secrets stored in the CI system. Never values. |
@@ -285,7 +285,8 @@ Diagnostics go to stderr; `--dry-run` file content and JSON reports go to stdout
 ## Limits
 
 Config files are read up to 1 MiB, YAML documents up to 100,000 nodes (including
-nodes reached through aliases), pipelines up to 500 jobs, variable values up to
+nodes reached through aliases), 256 entries in any plain mapping (100 labels),
+pipelines up to 500 jobs, variable values up to
 4 KiB, 1 MiB of variable values substituted at references, 1,024 matrix
 combinations in total, branch and tag patterns up to 255 characters and 100 per
 list, cron expressions up to 256 characters, 1 MiB of condition text repeated on

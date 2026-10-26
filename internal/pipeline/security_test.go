@@ -6,6 +6,8 @@ import (
 	"testing"
 	"time"
 
+	"go.yaml.in/yaml/v3"
+
 	"github.com/amitpatole/renvoy/internal/diagnostics"
 	"github.com/amitpatole/renvoy/internal/pipeline"
 )
@@ -374,4 +376,59 @@ func TestCronStepUpToFieldWidth(t *testing.T) {
 	if err := pipeline.ValidateCron("0 */25 * * *"); err == nil {
 		t.Error("a step wider than the field was accepted")
 	}
+}
+
+// Round 11: metadata.labels was decoded by the YAML library, whose duplicate-key
+// check is quadratic (70k labels took 38 s). Labels are now ordered and bounded,
+// and every plain map is bounded before the library decodes it.
+func TestLabelsAndMapsAreBounded(t *testing.T) {
+	var b strings.Builder
+	b.WriteString("metadata:\n  name: demo\n  labels:\n")
+	for i := 0; i < 70000; i++ {
+		b.WriteString("    l" + strconv.Itoa(i) + ": v\n")
+	}
+	src := strings.Replace(minimal, "metadata:\n  name: demo\n", b.String(), 1)
+	start := time.Now()
+	_, diags := parse(t, src)
+	if d := time.Since(start); d > 3*time.Second {
+		t.Fatalf("validating 70k labels took %v", d)
+	}
+	expectError(t, diags, "metadata.labels", "at most 100")
+
+	dup := strings.Replace(minimal, "metadata:\n  name: demo\n", "metadata:\n  name: demo\n  labels:\n    team: a\n    team: b\n", 1)
+	if p, _, diags := pipeline.Parse([]byte(dup), "renvoy.yaml"); p != nil || !strings.Contains(render(diags), "defined more than once") {
+		t.Fatalf("duplicate labels must be rejected:\n%s", render(diags))
+	}
+
+	var perms strings.Builder
+	perms.WriteString("extensions:\n  github-actions:\n    permissions:\n")
+	for i := 0; i < 50000; i++ {
+		perms.WriteString("      p" + strconv.Itoa(i) + ": read\n")
+	}
+	ext := minimal + perms.String()
+	node := extensionNode(t, ext)
+	start = time.Now()
+	var target struct {
+		Permissions map[string]string `yaml:"permissions"`
+	}
+	diags = pipeline.DecodeStrict(node, &target, "extensions.github-actions", nil)
+	if d := time.Since(start); d > 3*time.Second {
+		t.Fatalf("decoding a 50k-entry extension map took %v", d)
+	}
+	if !strings.Contains(render(diags), "at most 256") {
+		t.Fatalf("expected the map limit:\n%s", render(diags))
+	}
+}
+
+func extensionNode(t *testing.T, src string) *yaml.Node {
+	t.Helper()
+	p, _, diags := pipeline.Parse([]byte(src), "renvoy.yaml")
+	if p == nil {
+		t.Fatalf("does not parse: %s", render(diags))
+	}
+	n := p.Extensions.Get("github-actions")
+	if n == nil {
+		t.Fatal("no extension node")
+	}
+	return n
 }

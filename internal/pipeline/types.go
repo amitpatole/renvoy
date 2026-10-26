@@ -36,9 +36,9 @@ type Pipeline struct {
 
 // Metadata identifies the pipeline.
 type Metadata struct {
-	Name        string            `yaml:"name"`
-	Description string            `yaml:"description"`
-	Labels      map[string]string `yaml:"labels"`
+	Name        string `yaml:"name"`
+	Description string `yaml:"description"`
+	Labels      Vars   `yaml:"labels"`
 }
 
 // Triggers declares which events start the pipeline.

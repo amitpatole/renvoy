@@ -19,6 +19,10 @@ import (
 // reached through aliases, so alias-expansion documents cannot exhaust memory or CPU.
 const MaxNodes = 100_000
 
+// MaxMapEntries bounds plain mappings (such as provider extension settings) that
+// are decoded by the YAML library.
+const MaxMapEntries = 256
+
 // Position is a 1-based source location.
 type Position struct {
 	Line   int
@@ -264,10 +268,21 @@ func (w *walker) walk(n *yaml.Node, t reflect.Type, path string) {
 		if !w.expectKind(n, path, yaml.MappingNode, "a mapping") {
 			return
 		}
+		// The YAML library checks duplicate keys in quadratic time while decoding
+		// maps, so maps are bounded and checked here first.
+		if len(n.Content)/2 > MaxMapEntries {
+			w.errorf(path, n, "the mapping has %d entries; at most %d are allowed", len(n.Content)/2, MaxMapEntries)
+			return
+		}
+		seen := map[string]bool{}
 		for i := 0; i+1 < len(n.Content); i += 2 {
 			k := n.Content[i]
 			kp := JoinKey(path, k.Value)
 			w.sm.record(kp, k)
+			if seen[k.Value] {
+				w.errorf(kp, k, "%q is defined more than once", k.Value)
+			}
+			seen[k.Value] = true
 			w.walk(n.Content[i+1], t.Elem(), kp)
 		}
 	case reflect.String, reflect.Bool, reflect.Int:
