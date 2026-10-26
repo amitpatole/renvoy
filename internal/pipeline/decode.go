@@ -19,6 +19,9 @@ import (
 // reached through aliases, so alias-expansion documents cannot exhaust memory or CPU.
 const MaxNodes = 100_000
 
+// MaxVarsEntries bounds variables, env, with, labels, and build arguments.
+const MaxVarsEntries = 1000
+
 // MaxMapEntries bounds plain mappings (such as provider extension settings) that
 // are decoded by the YAML library.
 const MaxMapEntries = 256
@@ -321,6 +324,12 @@ func (w *walker) walkStruct(n *yaml.Node, t reflect.Type, path string) {
 
 func (w *walker) walkScalarMap(n *yaml.Node, path string) {
 	if !w.expectKind(n, path, yaml.MappingNode, "a mapping") {
+		return
+	}
+	// These mappings are rendered as mappings again, where the YAML library's
+	// quadratic duplicate-key check runs on them, so their size is bounded.
+	if len(n.Content)/2 > MaxVarsEntries {
+		w.errorf(path, n, "the mapping has %d entries; at most %d are allowed", len(n.Content)/2, MaxVarsEntries)
 		return
 	}
 	seen := map[string]bool{}

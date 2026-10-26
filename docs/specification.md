@@ -285,7 +285,8 @@ Diagnostics go to stderr; `--dry-run` file content and JSON reports go to stdout
 ## Limits
 
 Config files are read up to 1 MiB, YAML documents up to 100,000 nodes (including
-nodes reached through aliases), 256 entries in any plain mapping (100 labels),
+nodes reached through aliases), 1,000 entries in `variables`, `env`, `with`, and
+build arguments, 256 entries in other mappings (100 labels), 20 schedules,
 pipelines up to 500 jobs, variable values up to
 4 KiB, 1 MiB of variable values substituted at references, 1,024 matrix
 combinations in total, branch and tag patterns up to 255 characters and 100 per

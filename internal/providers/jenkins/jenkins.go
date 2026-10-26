@@ -346,13 +346,14 @@ func cronExpr(schedules []pipeline.Schedule) string {
 			byBranch[b] = append(byBranch[b], s.Cron)
 		}
 	}
-	expr := "''"
-	for i := len(branches) - 1; i >= 0; i-- {
-		b := branches[i]
-		spec := "TZ=UTC\n" + strings.Join(byBranch[b], "\n")
-		expr = fmt.Sprintf("env.BRANCH_NAME == %s ? %s : %s", sq(b), sq(spec), expr)
+	// a ? x : b ? y : '' is right-associative, so the chain is written in order.
+	var b strings.Builder
+	for _, branch := range branches {
+		spec := "TZ=UTC\n" + strings.Join(byBranch[branch], "\n")
+		fmt.Fprintf(&b, "env.BRANCH_NAME == %s ? %s : ", sq(branch), sq(spec))
 	}
-	return expr
+	b.WriteString("''")
+	return b.String()
 }
 
 type renderer struct {

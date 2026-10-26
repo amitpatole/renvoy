@@ -135,3 +135,10 @@ All notable changes to this project are documented here. The format follows
   entries and checked for duplicates before the YAML library decodes it, whose
   duplicate check is quadratic (70k labels took 38 s; now 0.2 s).
 - Updating an unedited generated file keeps its permissions.
+- Schedules are limited to 20 with at most 100 branches each, and the Jenkins
+  cron expression is built in linear time (40k branches took 43 s); `env`, `with`,
+  `variables`, and build arguments are limited to 1,000 entries, since providers
+  render them as mappings that the YAML library checks in quadratic time (49k
+  entries took 38 s). Both reproductions now fail in about 0.1 s.
+- When a write fails partway through a multi-file `generate`, the files already
+  written are listed, followed by a "stopped" line.

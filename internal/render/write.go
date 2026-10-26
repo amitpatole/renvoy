@@ -211,10 +211,24 @@ type Backup struct {
 // content. Providers ignore files with this suffix.
 const BackupSuffix = ".renvoy-backup"
 
+// Result reports what Write did, including when it stops early.
+type Result struct {
+	Backups []Backup
+	Written []Planned
+}
+
 // Write writes every planned file that changes, atomically per file. Before an
 // Overwrite (a forced replacement of an edited or foreign file) it saves the
-// previous content next to the file, so --force never loses data.
-func Write(root string, planned []Planned) ([]Backup, error) {
+// previous content next to the file, so --force never loses data. On error the
+// result lists the files already written.
+func Write(root string, planned []Planned) (Result, error) {
+	var res Result
+	backups, err := write(root, planned, &res)
+	res.Backups = backups
+	return res, err
+}
+
+func write(root string, planned []Planned, res *Result) ([]Backup, error) {
 	var backups []Backup
 	for _, p := range planned {
 		if p.Action == Unchanged {
@@ -253,6 +267,7 @@ func Write(root string, planned []Planned) ([]Backup, error) {
 		if err := writeAtomic(dir, p.Abs, p.Content, mode); err != nil {
 			return backups, fmt.Errorf("%s: %w", p.Path, err)
 		}
+		res.Written = append(res.Written, p)
 	}
 	return backups, nil
 }

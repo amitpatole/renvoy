@@ -25,6 +25,9 @@ var (
 	usesRefRe      = regexp.MustCompile(`^[^\s'"\x60$\\]+$`)
 )
 
+// MaxSchedules bounds triggers.schedules.
+const MaxSchedules = 20
+
 // MaxLabels bounds metadata.labels.
 const MaxLabels = 100
 
@@ -290,8 +293,14 @@ func (v *validator) checkTriggers() {
 	if t.PullRequest != nil {
 		v.checkPatterns("triggers.pullRequest.branches", t.PullRequest.Branches)
 	}
+	if len(t.Schedules) > MaxSchedules {
+		v.errorf("triggers.schedules", "%d schedules are listed; at most %d are allowed", len(t.Schedules), MaxSchedules)
+	}
 	for i, s := range t.Schedules {
 		path := JoinIndex("triggers.schedules", i)
+		if len(s.Branches) > MaxPatterns {
+			v.errorf(path+".branches", "%d branches are listed; at most %d are allowed", len(s.Branches), MaxPatterns)
+		}
 		if err := ValidateCron(s.Cron); err != nil {
 			v.errorf(path+".cron", "%v", err).Hint = `use five fields: minute hour day-of-month month day-of-week, e.g. "0 3 * * 1"`
 		}

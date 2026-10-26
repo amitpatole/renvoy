@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -379,5 +380,26 @@ func TestForceWritesNothingWhenABackupPathIsUnsafe(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(dir, ".github")); err == nil {
 		t.Fatal("new files were created before the run was refused")
+	}
+}
+
+// Round 12: when a write fails partway, the files already written are reported.
+func TestPartialWriteIsReported(t *testing.T) {
+	if runtime.GOOS == "windows" || os.Geteuid() == 0 {
+		t.Skip("needs POSIX permissions and a non-root user")
+	}
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "renvoy.yaml"), app.Starter)
+	if err := os.MkdirAll(filepath.Join(dir, ".github", "workflows"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(filepath.Join(dir, ".github", "workflows"), 0o555); err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = os.Chmod(filepath.Join(dir, ".github", "workflows"), 0o755) }()
+	r := run(t, dir, "generate", "-p", "gitlab", "-p", "github-actions")
+	expectCode(t, r, app.ExitFailure)
+	if !strings.Contains(r.stderr, "create    .gitlab-ci.yml") || !strings.Contains(r.stderr, "stopped: the files listed above were written") {
+		t.Fatalf("stderr: %s", r.stderr)
 	}
 }

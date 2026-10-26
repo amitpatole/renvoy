@@ -432,3 +432,36 @@ func extensionNode(t *testing.T, src string) *yaml.Node {
 	}
 	return n
 }
+
+// Round 12: schedule branch lists and schedules are bounded like other lists.
+func TestScheduleLimits(t *testing.T) {
+	var branches []string
+	for i := 0; i < pipeline.MaxPatterns+1; i++ {
+		branches = append(branches, "b"+strconv.Itoa(i))
+	}
+	src := strings.Replace(minimal, "push: {}", "schedules:\n    - cron: \"0 3 * * *\"\n      branches: ["+strings.Join(branches, ", ")+"]", 1)
+	_, diags := parse(t, src)
+	expectError(t, diags, "triggers.schedules[0].branches", "at most 100")
+
+	var scheds strings.Builder
+	scheds.WriteString("schedules:\n")
+	for i := 0; i < pipeline.MaxSchedules+1; i++ {
+		scheds.WriteString("    - cron: \"0 3 * * *\"\n      branches: [main]\n")
+	}
+	_, diags = parse(t, strings.Replace(minimal, "push: {}", strings.TrimSuffix(scheds.String(), "\n"), 1))
+	expectError(t, diags, "triggers.schedules", "at most 20")
+}
+
+// Round 12: ordered maps (env, with, variables, build args) are bounded, because
+// providers render them as mappings again.
+func TestOrderedMapsAreBounded(t *testing.T) {
+	var env strings.Builder
+	env.WriteString("        env:\n")
+	for i := 0; i < pipeline.MaxVarsEntries+1; i++ {
+		env.WriteString("          E" + strconv.Itoa(i) + ": v\n")
+	}
+	src := strings.Replace(minimal, "        steps:\n", env.String()+"        steps:\n", 1)
+	if p, _, diags := pipeline.Parse([]byte(src), "renvoy.yaml"); p != nil || !strings.Contains(render(diags), "at most 1000") {
+		t.Fatalf("expected the entry limit:\n%s", render(diags))
+	}
+}

@@ -226,3 +226,49 @@ func TestLargeCustomYAMLFailsFast(t *testing.T) {
 		t.Fatalf("refusing an oversized custom block took %v", d)
 	}
 }
+
+// Round 12: rendering at the entry and schedule limits stays fast for every
+// provider, including when a custom block triggers the combined-file checks.
+func TestRenderingAtLimitsIsFast(t *testing.T) {
+	var b strings.Builder
+	b.WriteString("apiVersion: renvoy.dev/v1alpha1\nkind: Pipeline\nmetadata: {name: big}\ntriggers:\n  push: {}\n  schedules:\n")
+	for s := 0; s < pipeline.MaxSchedules; s++ {
+		b.WriteString("    - cron: \"0 3 * * *\"\n      branches: [")
+		for i := 0; i < pipeline.MaxPatterns; i++ {
+			if i > 0 {
+				b.WriteString(", ")
+			}
+			fmt.Fprintf(&b, "s%d-b%d", s, i)
+		}
+		b.WriteString("]\n")
+	}
+	b.WriteString("extensions:\n  bamboo: {projectKey: BIG, planKey: LIMITS}\nstages:\n  - name: s\n    jobs:\n      - name: j\n        env:\n")
+	for i := 0; i < pipeline.MaxVarsEntries; i++ {
+		fmt.Fprintf(&b, "          E%d: v\n", i)
+	}
+	b.WriteString("        steps:\n          - uses: checkout\n          - run: x\n")
+	res := config.Compile([]byte(b.String()), "renvoy.yaml", registry.Names())
+	if res.Pipeline == nil {
+		t.Fatalf("does not compile: %v", res.Diagnostics)
+	}
+	start := time.Now()
+	for _, p := range registry.All() {
+		files, err := p.Render(context.Background(), res.Pipeline, providers.RenderOptions{SourceName: "renvoy.yaml"})
+		if err != nil {
+			t.Fatalf("%s: %v", p.Name(), err)
+		}
+		for _, f := range files {
+			out, err := render.Finalize(f, "renvoy.yaml", nil)
+			if err != nil {
+				continue
+			}
+			// Re-finalize against itself to exercise the custom-block path.
+			if _, err := render.Finalize(f, "renvoy.yaml", out); err != nil {
+				t.Fatalf("%s %s: %v", p.Name(), f.Path, err)
+			}
+		}
+	}
+	if d := time.Since(start); d > 10*time.Second {
+		t.Fatalf("rendering at the limits took %v", d)
+	}
+}

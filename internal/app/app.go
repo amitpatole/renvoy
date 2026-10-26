@@ -291,15 +291,22 @@ func (e *env) generateCmd() *cobra.Command {
 				}
 				return nil
 			}
-			backups, err := render.Write(outDir, planned)
-			for _, b := range backups {
+			res, err := render.Write(outDir, planned)
+			for _, b := range res.Backups {
 				fmt.Fprintf(e.stderr, "%-9s %s -> %s\n", "backup", b.Path, b.BackupPath)
 			}
-			if err != nil {
-				return err
+			written := map[string]bool{}
+			for _, p := range res.Written {
+				written[p.Path] = true
 			}
 			for _, p := range planned {
-				fmt.Fprintf(e.stderr, "%-9s %s\n", p.Action, p.Path)
+				if err == nil || written[p.Path] || p.Action == render.Unchanged {
+					fmt.Fprintf(e.stderr, "%-9s %s\n", p.Action, p.Path)
+				}
+			}
+			if err != nil {
+				fmt.Fprintf(e.stderr, "stopped: the files listed above were written; the rest were not\n")
+				return err
 			}
 			return nil
 		},

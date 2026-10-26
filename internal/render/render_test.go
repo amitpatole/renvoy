@@ -346,7 +346,8 @@ func TestForceAlwaysKeepsABackup(t *testing.T) {
 		if len(c) != 0 || p.Action != render.Overwrite {
 			t.Fatalf("%q: action=%s conflicts=%v", v[0], p.Action, c)
 		}
-		backups, err := render.Write(root, []render.Planned{p})
+		res, err := render.Write(root, []render.Planned{p})
+		backups := res.Backups
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -372,7 +373,8 @@ func TestBackupsAreNumbered(t *testing.T) {
 			t.Fatal(err)
 		}
 		p, _ := plan(t, root, file("a: 1"), true)
-		backups, err := render.Write(root, []render.Planned{p})
+		res, err := render.Write(root, []render.Planned{p})
+		backups := res.Backups
 		if err != nil || len(backups) != 1 || backups[0].BackupPath != want {
 			t.Fatalf("backup %d = %v, %v; want %s", i, backups, err, want)
 		}
