@@ -1,0 +1,18 @@
+info [bamboo] renvoy.yaml:12:5 triggers.push.branches:
+  Bamboo builds the branch its plan repository uses; make sure that is "main"
+
+warning [bamboo] renvoy.yaml:15:7 triggers.schedules[0]:
+  Bamboo runs cron triggers in the server time zone on the plan's branch, not in UTC on the listed branches
+  hint: adjust the hours for the server time zone and make sure main is the plan branch
+
+info [bamboo] renvoy.yaml:21:1 secrets:
+  secrets is configured outside the generated file: create Bamboo variables (encrypted) with the secret names; scripts read them as $bamboo_NAME
+
+info [bamboo] renvoy.yaml:34:1 stages:
+  Bamboo runs these stages one after another: test, build, build (2), deploy
+
+warning [bamboo] renvoy.yaml:86:9 stages[2].jobs[0].environment:
+  Bamboo plan jobs have no deployment environment; "production" is only exported as RENVOY_ENVIRONMENT
+
+info [bamboo] renvoy.yaml:88:11 stages[2].jobs[0].environment.approvals:
+  job "production" runs in a manual Bamboo stage that a user must start

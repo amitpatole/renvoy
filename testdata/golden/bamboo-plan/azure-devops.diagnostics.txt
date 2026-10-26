@@ -1,0 +1,2 @@
+info [azure-devops] renvoy.yaml:88:11 stages[2].jobs[0].environment.approvals:
+  jobs.environment.approvals is configured outside the generated file: add an Approvals check to the environment under Pipelines > Environments

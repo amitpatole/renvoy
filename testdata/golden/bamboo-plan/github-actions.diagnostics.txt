@@ -1,0 +1,10 @@
+info [github-actions] renvoy.yaml:
+  the workflow token is limited to contents: read
+  hint: grant more with extensions.github-actions.permissions, e.g. packages: write to push images
+
+warning [github-actions] renvoy.yaml:15:7 triggers.schedules[0]:
+  GitHub runs scheduled workflows only on the default branch; the branches list is not enforced
+  hint: make sure the listed branch is the repository's default branch
+
+info [github-actions] renvoy.yaml:88:11 stages[2].jobs[0].environment.approvals:
+  jobs.environment.approvals is configured outside the generated file: add required reviewers to the environment in the repository settings

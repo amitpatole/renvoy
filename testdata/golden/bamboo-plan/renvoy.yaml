@@ -1,0 +1,94 @@
+# A pipeline written to compile on Bamboo (YAML and Java Specs) as well as
+# the other providers.
+apiVersion: renvoy.dev/v1alpha1
+kind: Pipeline
+
+metadata:
+  name: bamboo-plan
+  description: Builds, tests, and ships the service.
+
+triggers:
+  push:
+    branches: [main]
+  pullRequest: {}
+  schedules:
+    - cron: "30 2 * * 1-5"
+      branches: [main]
+
+variables:
+  IMAGE: registry.example.com/acme/service
+
+secrets:
+  - REGISTRY_TOKEN
+
+extensions:
+  bamboo:
+    projectKey: ACME
+    planKey: SERVICE
+    linkedRepository: acme-service
+    specsVersion: 12.1.12
+    javaPackage: com.acme.specs
+    requirements:
+      windows: ["operating.system=Windows.*"]
+
+stages:
+  - name: test
+    jobs:
+      - name: unit
+        container:
+          image: python:3.12
+          options: --cpus 2
+        steps:
+          - uses: checkout
+          - name: Run tests
+            run: |
+              pip install -r requirements.txt
+              pytest --junitxml=reports/junit.xml
+            env:
+              PYTEST_ADDOPTS: -q
+          - publishTestResults:
+              path: reports/junit.xml
+
+      - name: windows-check
+        runsOn: windows
+        steps:
+          - uses: checkout
+          - run: Write-Output "commit $env:COMPUTERNAME"
+
+  - name: build
+    jobs:
+      - name: package
+        steps:
+          - uses: checkout
+          - run: make dist
+            workingDirectory: app/
+          - uploadArtifact:
+              name: dist
+              paths: [app/dist/]
+
+      - name: image
+        dependsOn: [package]
+        when:
+          branches: [main]
+        steps:
+          - uses: checkout
+          - downloadArtifact:
+              name: dist
+          - buildImage:
+              image: ${variables.IMAGE}:${git.sha}
+          - run: echo "${secrets.REGISTRY_TOKEN}" | docker login registry.example.com -u ci --password-stdin
+          - pushImage:
+              image: ${variables.IMAGE}:${git.sha}
+
+  - name: deploy
+    jobs:
+      - name: production
+        environment:
+          name: production
+          approvals:
+            required: true
+        steps:
+          - uses: checkout
+          - deployKubernetes:
+              manifests: deploy/
+              namespace: production

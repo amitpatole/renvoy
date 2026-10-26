@@ -1,0 +1,68 @@
+error [bamboo-java] renvoy.yaml:
+  Bamboo needs a project key and plan key
+  hint: add extensions.bamboo.projectKey and extensions.bamboo.planKey, e.g. PROJ and BUILD
+
+warning [bamboo-java] renvoy.yaml:
+  Java Specs plans need a repository for checkout tasks
+  hint: set extensions.bamboo.linkedRepository to the linked repository that holds this code
+
+info [bamboo-java] renvoy.yaml:
+  using Bamboo Specs 12.1.12; it must match your Bamboo server version
+  hint: set extensions.bamboo.specsVersion to your server version
+
+error [bamboo-java] renvoy.yaml:11:5 triggers.push.branches:
+  Bamboo creates plan branches either for matching branches or for pull requests, not both
+  hint: limit push to the plan's branch, or drop the pull request trigger
+
+error [bamboo-java] renvoy.yaml:12:5 triggers.push.tags:
+  Bamboo Java Specs cannot express triggers.tags
+  hint: Bamboo plans do not trigger on tags; use a separate plan or deployment project
+
+error [bamboo-java] renvoy.yaml:14:5 triggers.pullRequest.branches:
+  Bamboo cannot filter pull requests by target branch
+  hint: remove the branches filter
+
+warning [bamboo-java] renvoy.yaml:17:7 triggers.schedules[0]:
+  Bamboo runs cron triggers in the server time zone on the plan's branch, not in UTC on the listed branches
+  hint: adjust the hours for the server time zone and make sure main is the plan branch
+
+info [bamboo-java] renvoy.yaml:24:1 secrets:
+  secrets is configured outside the generated file: create Bamboo variables (encrypted) with the secret names; scripts read them as $bamboo_NAME
+
+info [bamboo-java] renvoy.yaml:28:1 stages:
+  Bamboo runs these stages one after another: test, build, build (2), deploy
+
+error [bamboo-java] renvoy.yaml:32:9 stages[0].jobs[0].timeoutMinutes:
+  Bamboo Java Specs cannot express jobs.timeoutMinutes
+  hint: Bamboo configures hung build detection per plan, not per job
+
+error [bamboo-java] renvoy.yaml:35:9 stages[0].jobs[0].matrix:
+  Bamboo Java Specs cannot express jobs.matrix
+  hint: Bamboo has no job matrix; declare one job per combination
+
+error [bamboo-java] renvoy.yaml:57:9 stages[0].jobs[2].runsOn:
+  Bamboo needs agent requirements to place windows jobs
+  hint: set extensions.bamboo.requirements.windows, e.g. ["operating.system=Windows.*"]
+
+error [bamboo-java] renvoy.yaml:76:11 stages[1].jobs[1].when.branches:
+  Bamboo task conditions can match only one branch
+
+error [bamboo-java] renvoy.yaml:76:11 stages[1].jobs[1].when.branches:
+  Bamboo task conditions cannot match the branch prefix "release/*"
+
+error [bamboo-java] renvoy.yaml:97:9 stages[2].jobs[0].when.branches:
+  Bamboo task conditions can match only one branch
+
+error [bamboo-java] renvoy.yaml:97:9 stages[2].jobs[0].when.branches:
+  Bamboo task conditions cannot match the branch prefix "release/*"
+
+error [bamboo-java] renvoy.yaml:97:9 stages[2].jobs[0].when.events:
+  Bamboo task conditions cannot test the triggering event
+  hint: remove events, or move the job into a separate plan
+
+warning [bamboo-java] renvoy.yaml:98:9 stages[2].jobs[0].environment:
+  Bamboo plan jobs have no deployment environment; "production" is only exported as RENVOY_ENVIRONMENT
+
+error [bamboo-java] renvoy.yaml:101:9 stages[2].jobs[0].timeoutMinutes:
+  Bamboo Java Specs cannot express jobs.timeoutMinutes
+  hint: Bamboo configures hung build detection per plan, not per job

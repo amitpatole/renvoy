@@ -1,0 +1,7 @@
+warning [bamboo-java] renvoy.yaml:
+  Java Specs plans need a repository for checkout tasks
+  hint: set extensions.bamboo.linkedRepository to the linked repository that holds this code
+
+info [bamboo-java] renvoy.yaml:
+  using Bamboo Specs 12.1.12; it must match your Bamboo server version
+  hint: set extensions.bamboo.specsVersion to your server version

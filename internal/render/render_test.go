@@ -187,17 +187,18 @@ func TestChecksumIgnoresOnlyCustomContent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !render.Pristine(out, "#") {
+	f := file("a: 1")
+	if !render.PristineFile(out, f) {
 		t.Fatal("fresh output is not pristine")
 	}
 	custom := strings.Replace(string(out), "# Provider-specific content retained during regeneration.\n", "x: 1\n", 1)
-	if !render.Pristine([]byte(custom), "#") {
+	if !render.PristineFile([]byte(custom), f) {
 		t.Fatal("custom edits should not affect the checksum")
 	}
-	if render.Pristine([]byte(strings.Replace(string(out), "a: 1", "a: 2", 1)), "#") {
+	if render.PristineFile([]byte(strings.Replace(string(out), "a: 1", "a: 2", 1)), f) {
 		t.Fatal("body edits must break the checksum")
 	}
-	if render.Pristine([]byte(strings.Replace(string(out), "sha256:", "sha256:0", 1)), "#") {
+	if render.PristineFile([]byte(strings.Replace(string(out), "sha256:", "sha256:0", 1)), f) {
 		t.Fatal("a tampered checksum must not verify")
 	}
 }

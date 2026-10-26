@@ -64,9 +64,13 @@ func TestInitRefusesSymlink(t *testing.T) {
 	expectCode(t, run(t, dir, "init", "--force"), app.ExitUnsafeOverwrite)
 }
 
+// bambooKeys are the only settings the starter lacks for Bamboo, which cannot
+// invent project and plan keys.
+const bambooKeys = "\nextensions:\n  bamboo:\n    projectKey: PROJ\n    planKey: SERVICE\n"
+
 func TestStarterWorksForEveryProvider(t *testing.T) {
 	dir := t.TempDir()
-	writeFile(t, filepath.Join(dir, "renvoy.yaml"), app.Starter)
+	writeFile(t, filepath.Join(dir, "renvoy.yaml"), app.Starter+bambooKeys)
 	r := run(t, dir, "validate")
 	expectCode(t, r, app.ExitOK)
 	if !strings.Contains(r.stderr, "renvoy.yaml is valid") {

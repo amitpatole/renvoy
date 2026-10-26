@@ -45,10 +45,9 @@ stages:
   - name: build
     jobs:
       - name: image
-        # Only build images for pushes to main.
+        # Only build images on main (pull request builds are skipped).
         when:
           branches: [main]
-          events: [push]
         steps:
           - uses: checkout
           - buildImage:

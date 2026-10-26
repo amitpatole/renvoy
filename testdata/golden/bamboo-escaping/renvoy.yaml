@@ -1,0 +1,32 @@
+# Values that must survive Java and YAML quoting in Bamboo Specs.
+apiVersion: renvoy.dev/v1alpha1
+kind: Pipeline
+
+metadata:
+  name: bamboo-escaping
+  description: Unicode café and emoji 🚀 in a plan description
+
+triggers:
+  manual: {}
+
+variables:
+  QUOTES: it's "quoted" \ back\slash $HOME ${HOME}
+  UNICODE: naïve café 🚀 \u0041
+
+extensions:
+  bamboo:
+    projectKey: ESC
+    planKey: JAVA
+
+stages:
+  - name: build
+    jobs:
+      - name: a
+        steps:
+          - uses: checkout
+          - name: It's a "named" step \ with café 🚀
+            run: |
+              echo '${variables.QUOTES}' "${variables.UNICODE}"
+              printf '%s\n' "tab	here" "\u0022 is not an escape"
+            env:
+              SAFE: plain 'single' \ $dollar 🚀

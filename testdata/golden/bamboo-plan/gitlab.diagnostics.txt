@@ -1,0 +1,16 @@
+info [gitlab] renvoy.yaml:15:7 triggers.schedules[0]:
+  triggers.schedules is configured outside the generated file: create a pipeline schedule (timezone UTC) for each listed branch under Build > Pipeline schedules; the generated workflow rules accept scheduled pipelines
+
+error [gitlab] renvoy.yaml:40:11 stages[0].jobs[0].container.options:
+  GitLab CI cannot express jobs.container.options
+  hint: GitLab cannot pass docker run options from the pipeline; configure them on the runner
+
+info [gitlab] renvoy.yaml:53:9 stages[0].jobs[1].runsOn:
+  windows jobs use the GitLab-hosted runner tags [saas-windows-medium-amd64]
+  hint: set extensions.gitlab.runnerTags.windows for self-managed runners
+
+info [gitlab] renvoy.yaml:69:9 stages[1].jobs[1].name:
+  "image" is a reserved GitLab CI keyword, so the job is named "build:image"
+
+info [gitlab] renvoy.yaml:88:11 stages[2].jobs[0].environment.approvals:
+  jobs.environment.approvals is configured outside the generated file: protect the environment and require approvals under Operate > Environments

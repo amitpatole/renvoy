@@ -1,0 +1,12 @@
+error [bamboo] renvoy.yaml:
+  Bamboo needs a project key and plan key
+  hint: add extensions.bamboo.projectKey and extensions.bamboo.planKey, e.g. PROJ and BUILD
+
+info [bamboo] renvoy.yaml:9:5 triggers.push.branches:
+  Bamboo builds the branch its plan repository uses; make sure that is "main"
+
+info [bamboo] renvoy.yaml:45:9 stages[2].jobs[0]:
+  Bamboo YAML Specs check out the repository at the start of job "staging" because it has no checkout step
+
+warning [bamboo] renvoy.yaml:46:9 stages[2].jobs[0].environment:
+  Bamboo plan jobs have no deployment environment; "staging" is only exported as RENVOY_ENVIRONMENT

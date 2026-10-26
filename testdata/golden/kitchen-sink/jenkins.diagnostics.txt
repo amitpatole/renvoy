@@ -1,6 +1,6 @@
 warning renvoy.yaml:20:3 extensions.circleci:
   unknown extension namespace "circleci" is ignored by every provider
-  hint: known namespaces: github-actions, gitlab, azure-devops, jenkins
+  hint: known namespaces: github-actions, gitlab, azure-devops, jenkins, bamboo, bamboo-java
 
 info [jenkins] renvoy.yaml:10:3 triggers.push:
   triggers.push is configured outside the generated file: multibranch pipelines build pushed branches and tags through SCM webhooks or indexing

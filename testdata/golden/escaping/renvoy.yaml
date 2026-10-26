@@ -14,6 +14,11 @@ variables:
   MULTI: "line1\nline2"
   ESCAPED_REF: $${variables.QUOTES}
 
+extensions:
+  bamboo:
+    projectKey: ESC
+    planKey: QUOTING
+
 stages:
   - name: build
     jobs:

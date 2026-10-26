@@ -1,0 +1,44 @@
+warning renvoy.yaml:20:3 extensions.circleci:
+  unknown extension namespace "circleci" is ignored by every provider
+  hint: known namespaces: github-actions, gitlab, azure-devops, jenkins, bamboo, bamboo-java
+
+error [bamboo-java] renvoy.yaml:
+  Bamboo needs a project key and plan key
+  hint: add extensions.bamboo.projectKey and extensions.bamboo.planKey, e.g. PROJ and BUILD
+
+warning [bamboo-java] renvoy.yaml:
+  Java Specs plans need a repository for checkout tasks
+  hint: set extensions.bamboo.linkedRepository to the linked repository that holds this code
+
+info [bamboo-java] renvoy.yaml:
+  using Bamboo Specs 12.1.12; it must match your Bamboo server version
+  hint: set extensions.bamboo.specsVersion to your server version
+
+info [bamboo-java] renvoy.yaml:12:1 secrets:
+  secrets is configured outside the generated file: create Bamboo variables (encrypted) with the secret names; scripts read them as $bamboo_NAME
+
+error [bamboo-java] renvoy.yaml:27:9 stages[0].jobs[0].retries:
+  Bamboo Java Specs cannot express jobs.retries
+  hint: Bamboo cannot retry jobs from Specs; retry inside the step script
+
+error [bamboo-java] renvoy.yaml:33:13 stages[0].jobs[0].steps[1].cache:
+  Bamboo Java Specs cannot express steps.cache
+  hint: Bamboo has no cache task; remove the cache step
+
+error [bamboo-java] renvoy.yaml:37:13 stages[0].jobs[0].steps[2].uses:
+  Bamboo Java Specs cannot express steps.uses
+  hint: Renvoy does not invent Bamboo plugin task keys; use run steps
+
+error [bamboo-java] renvoy.yaml:47:15 stages[0].jobs[0].steps[4].when.events:
+  Bamboo task conditions cannot test the triggering event
+  hint: remove events, or move the job into a separate plan
+
+error [bamboo-java] renvoy.yaml:55:9 stages[1].jobs[0].runsOn:
+  Bamboo needs agent requirements to place macos jobs
+  hint: set extensions.bamboo.requirements.macos, e.g. ["operating.system=Windows.*"]
+
+warning [bamboo-java] renvoy.yaml:56:9 stages[1].jobs[0].environment:
+  Bamboo plan jobs have no deployment environment; "production" is only exported as RENVOY_ENVIRONMENT
+
+info [bamboo-java] renvoy.yaml:58:11 stages[1].jobs[0].environment.approvals:
+  job "publish" runs in a manual Bamboo stage that a user must start

@@ -30,10 +30,26 @@ const (
 
 // CustomBlock returns an empty custom block for inclusion in provider output.
 func CustomBlock(comment, indent string) string {
-	return indent + comment + " " + BeginMarker + "\n" +
-		indent + comment + " Provider-specific content retained during regeneration.\n" +
-		indent + comment + " " + EndMarker + "\n"
+	return CustomBlockWith(comment, indent, indent+comment+" Provider-specific content retained during regeneration.")
 }
+
+// CustomBlockWith returns a custom block whose initial content is the given lines.
+func CustomBlockWith(comment, indent string, lines ...string) string {
+	var b strings.Builder
+	b.WriteString(indent + comment + " " + BeginMarker + "\n")
+	for _, l := range lines {
+		b.WriteString(l + "\n")
+	}
+	b.WriteString(indent + comment + " " + EndMarker + "\n")
+	return b.String()
+}
+
+// style is a comment syntax: a prefix and an optional suffix.
+type style struct{ start, end string }
+
+func (s style) line(text string) string { return s.start + " " + text + s.end }
+
+func styleOf(f providers.GeneratedFile) style { return style{f.Comment, f.CommentEnd} }
 
 // ErrMalformedCustomBlock reports custom markers that cannot be preserved safely.
 var ErrMalformedCustomBlock = errors.New("malformed custom block")
@@ -45,17 +61,17 @@ type block struct {
 var markerMention = regexp.MustCompile(`renvoy:\s*(begin|end)\b`)
 
 // findBlock locates the custom block in lines. It returns ok=false when there is none.
-func findBlock(lines []string, comment string) (block, bool, error) {
+func findBlock(lines []string, st style) (block, bool, error) {
 	b := block{begin: -1, end: -1}
 	for i, line := range lines {
 		trimmed := strings.TrimSpace(line)
 		switch trimmed {
-		case comment + " " + BeginMarker:
+		case st.line(BeginMarker):
 			if b.begin >= 0 {
 				return b, false, fmt.Errorf("%w: line %d opens a second custom block", ErrMalformedCustomBlock, i+1)
 			}
 			b.begin = i
-		case comment + " " + EndMarker:
+		case st.line(EndMarker):
 			if b.begin < 0 {
 				return b, false, fmt.Errorf("%w: line %d closes a custom block that was never opened", ErrMalformedCustomBlock, i+1)
 			}
@@ -64,9 +80,9 @@ func findBlock(lines []string, comment string) (block, bool, error) {
 			}
 			b.end = i
 		default:
-			if markerMention.MatchString(trimmed) && strings.HasPrefix(trimmed, comment) {
+			if markerMention.MatchString(trimmed) && strings.HasPrefix(trimmed, st.start) {
 				return b, false, fmt.Errorf("%w: line %d has an unrecognized marker %q (expected %q or %q)",
-					ErrMalformedCustomBlock, i+1, trimmed, comment+" "+BeginMarker, comment+" "+EndMarker)
+					ErrMalformedCustomBlock, i+1, trimmed, st.line(BeginMarker), st.line(EndMarker))
 			}
 		}
 	}
@@ -96,9 +112,9 @@ func joinLines(lines []string) []byte {
 }
 
 // ExtractCustom returns the lines inside an existing file's custom block.
-func ExtractCustom(content []byte, comment string) ([]string, bool, error) {
+func ExtractCustom(content []byte, st style) ([]string, bool, error) {
 	lines := splitLines(bytes.ReplaceAll(content, []byte("\r\n"), []byte("\n")))
-	b, ok, err := findBlock(lines, comment)
+	b, ok, err := findBlock(lines, st)
 	if err != nil || !ok {
 		return nil, ok, err
 	}
@@ -106,19 +122,19 @@ func ExtractCustom(content []byte, comment string) ([]string, bool, error) {
 }
 
 // header returns the generated header with the given checksum.
-func header(comment, source, sum string) []string {
+func header(st style, source, sum string) []string {
 	return []string{
-		comment + " " + HeaderLine,
-		comment + " Source: " + source,
-		comment + " " + checksumLabel + " " + checksumPrefix + sum,
+		st.line(HeaderLine),
+		st.line("Source: " + source),
+		st.line(checksumLabel + " " + checksumPrefix + sum),
 	}
 }
 
 // Checksum hashes content with the checksum value blanked and the custom block's
 // inner lines removed, so custom edits never invalidate it.
-func Checksum(content []byte, comment string) (string, error) {
+func Checksum(content []byte, st style) (string, error) {
 	lines := splitLines(content)
-	b, ok, err := findBlock(lines, comment)
+	b, ok, err := findBlock(lines, st)
 	if err != nil {
 		return "", err
 	}
@@ -126,7 +142,7 @@ func Checksum(content []byte, comment string) (string, error) {
 		lines = append(append([]string{}, lines[:b.begin+1]...), lines[b.end:]...)
 	}
 	h := sha256.New()
-	label := comment + " " + checksumLabel
+	label := st.start + " " + checksumLabel
 	for i, line := range lines {
 		if i == 2 && strings.HasPrefix(line, label) {
 			line = label
@@ -139,30 +155,42 @@ func Checksum(content []byte, comment string) (string, error) {
 
 // Pristine reports whether content is a Renvoy-generated file whose recorded
 // checksum still matches, meaning nobody edited it outside the custom block.
-func Pristine(content []byte, comment string) bool {
+func Pristine(content []byte, st style) bool {
 	lines := splitLines(bytes.ReplaceAll(content, []byte("\r\n"), []byte("\n")))
-	if len(lines) < 3 || lines[0] != comment+" "+HeaderLine {
+	if len(lines) < 3 || lines[0] != st.line(HeaderLine) {
 		return false
 	}
-	recorded := strings.TrimPrefix(lines[2], comment+" "+checksumLabel+" "+checksumPrefix)
-	if recorded == lines[2] {
+	prefix := st.start + " " + checksumLabel + " " + checksumPrefix
+	if !strings.HasPrefix(lines[2], prefix) || !strings.HasSuffix(lines[2], st.end) {
 		return false
 	}
-	sum, err := Checksum(joinLines(lines), comment)
+	recorded := strings.TrimSuffix(strings.TrimPrefix(lines[2], prefix), st.end)
+	sum, err := Checksum(joinLines(lines), st)
 	return err == nil && sum == recorded
+}
+
+// PristineFile reports whether content is an unedited Renvoy-generated version of f.
+func PristineFile(content []byte, f providers.GeneratedFile) bool {
+	return Pristine(content, styleOf(f))
+}
+
+// IsGenerated reports whether content starts with f's generated header.
+func IsGenerated(content []byte, f providers.GeneratedFile) bool {
+	return strings.HasPrefix(string(content), styleOf(f).line(HeaderLine))
 }
 
 // Finalize assembles the final bytes of a generated file. When existing content
 // has a custom block, its lines replace the generated block's lines.
 func Finalize(f providers.GeneratedFile, source string, existing []byte) ([]byte, error) {
+	st := styleOf(f)
 	body := splitLines(f.Content)
 	if existing != nil {
-		custom, ok, err := ExtractCustom(existing, f.Comment)
+		custom, ok, err := ExtractCustom(existing, st)
 		if err != nil {
 			return nil, err
 		}
 		if ok {
-			b, found, err := findBlock(body, f.Comment)
+			b, found, err := findBlock(body, st)
 			if err != nil {
 				return nil, err
 			}
@@ -173,12 +201,12 @@ func Finalize(f providers.GeneratedFile, source string, existing []byte) ([]byte
 			body = append(append(append([]string{}, body[:b.begin+1]...), custom...), body[b.end:]...)
 		}
 	}
-	lines := append(header(f.Comment, source, ""), body...)
-	sum, err := Checksum(joinLines(lines), f.Comment)
+	lines := append(header(st, source, ""), body...)
+	sum, err := Checksum(joinLines(lines), st)
 	if err != nil {
 		return nil, err
 	}
-	lines[2] = header(f.Comment, source, sum)[2]
+	lines[2] = header(st, source, sum)[2]
 	out := joinLines(lines)
 	if f.YAML {
 		var v any

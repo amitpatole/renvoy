@@ -35,6 +35,9 @@ type RenderOptions struct {
 const (
 	CommentHash  = "#"
 	CommentSlash = "//"
+	CommentXML   = "<!--"
+	// CommentXMLEnd closes an XML comment line.
+	CommentXMLEnd = " -->"
 )
 
 // GeneratedFile is one provider output before header, checksum, and custom-block handling.
@@ -45,6 +48,8 @@ type GeneratedFile struct {
 	Content []byte
 	// Comment is the line-comment prefix of the file format.
 	Comment string
+	// CommentEnd closes a comment line in formats without line comments (" -->").
+	CommentEnd string
 	// YAML marks content that must remain valid YAML after custom blocks are spliced in.
 	YAML bool
 }

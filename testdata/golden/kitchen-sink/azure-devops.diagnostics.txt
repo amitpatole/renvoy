@@ -1,6 +1,6 @@
 warning renvoy.yaml:20:3 extensions.circleci:
   unknown extension namespace "circleci" is ignored by every provider
-  hint: known namespaces: github-actions, gitlab, azure-devops, jenkins
+  hint: known namespaces: github-actions, gitlab, azure-devops, jenkins, bamboo, bamboo-java
 
 error [azure-devops] renvoy.yaml:27:9 stages[0].jobs[0].retries:
   Azure DevOps Pipelines cannot express jobs.retries

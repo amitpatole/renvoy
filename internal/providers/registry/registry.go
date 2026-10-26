@@ -4,6 +4,7 @@ package registry
 import (
 	"github.com/amitpatole/renvoy/internal/providers"
 	"github.com/amitpatole/renvoy/internal/providers/azuredevops"
+	"github.com/amitpatole/renvoy/internal/providers/bamboo"
 	"github.com/amitpatole/renvoy/internal/providers/githubactions"
 	"github.com/amitpatole/renvoy/internal/providers/gitlab"
 	"github.com/amitpatole/renvoy/internal/providers/jenkins"
@@ -16,6 +17,8 @@ func All() []providers.Provider {
 		gitlab.New(),
 		azuredevops.New(),
 		jenkins.New(),
+		bamboo.NewYAML(),
+		bamboo.NewJava(),
 	}
 }
 
