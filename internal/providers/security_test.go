@@ -3,9 +3,12 @@ package providers_test
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/amitpatole/renvoy/internal/diagnostics"
 
 	"github.com/amitpatole/renvoy/internal/config"
 	"github.com/amitpatole/renvoy/internal/pipeline"
@@ -270,5 +273,46 @@ func TestRenderingAtLimitsIsFast(t *testing.T) {
 	}
 	if d := time.Since(start); d > 10*time.Second {
 		t.Fatalf("rendering at the limits took %v", d)
+	}
+}
+
+// Round 13: names Groovy cannot assign in an environment block (keywords and
+// default-imported class names) are rejected for Jenkins instead of producing
+// a Jenkinsfile that does not compile; other providers accept them.
+func TestJenkinsRejectsGroovyReservedNames(t *testing.T) {
+	src := `apiVersion: renvoy.dev/v1alpha1
+kind: Pipeline
+metadata: {name: names}
+triggers: {push: {}}
+secrets: [UUID]
+variables: {if: v, URL: v, PATH_PREFIX: v}
+stages:
+  - name: s
+    jobs:
+      - name: j
+        env: {Map: v, it: v}
+        steps:
+          - run: echo ${secrets.UUID}
+`
+	res := config.Compile([]byte(src), "renvoy.yaml", registry.Names())
+	if res.Pipeline == nil {
+		t.Fatalf("does not compile: %v", res.Diagnostics)
+	}
+	jk, _ := registry.Get("jenkins")
+	var got []string
+	for _, d := range jk.Validate(res.Pipeline) {
+		if d.Severity == diagnostics.Error {
+			got = append(got, d.Path)
+		}
+	}
+	want := []string{"variables.if", "variables.URL", "stages[0].jobs[0].env.Map", "secrets[0]"}
+	if !slices.Equal(got, want) {
+		t.Fatalf("errors at %v, want %v", got, want)
+	}
+	gh, _ := registry.Get("github-actions")
+	for _, d := range gh.Validate(res.Pipeline) {
+		if d.Severity == diagnostics.Error {
+			t.Fatalf("github-actions: %v", d)
+		}
 	}
 }

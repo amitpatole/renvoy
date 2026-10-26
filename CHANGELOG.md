@@ -142,3 +142,8 @@ All notable changes to this project are documented here. The format follows
   entries took 38 s). Both reproductions now fail in about 0.1 s.
 - When a write fails partway through a multi-file `generate`, the files already
   written are listed, followed by a "stopped" line.
+- Jenkins rejects variable, job `env`, and secret names that Groovy cannot assign
+  in an `environment` block (keywords such as `if`, and default-imported class
+  names such as `URL` or `UUID`), instead of writing a Jenkinsfile that fails to
+  compile. The 584 class names were listed from JDK 21 and Groovy 4 and each was
+  confirmed with the Groovy compiler.

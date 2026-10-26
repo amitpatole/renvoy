@@ -167,6 +167,29 @@ func (pr *Provider) Validate(p *pipeline.Pipeline) diagnostics.List {
 	if len(p.Secrets) > 0 {
 		add(diagnostics.Infof("secrets", "create Jenkins secret text credentials with the IDs %s", strings.Join(p.Secrets, ", ")))
 	}
+	reserved := func(path, kind, name string) {
+		if groovyReserved[name] {
+			add(diagnostics.Errorf(path, "%s %q cannot be a Jenkins environment variable: Groovy reserves the name", kind, name).
+				WithHint("rename it; Groovy keywords and default-imported class names such as URL or UUID cannot be assigned in an environment block"))
+		}
+	}
+	for _, v := range p.Variables {
+		reserved(pipeline.JoinKey("variables", v.Name), "variable", v.Name)
+	}
+	usedSecrets := map[string]bool{}
+	for _, j := range p.AllJobs() {
+		for _, e := range j.Env {
+			reserved(pipeline.JoinKey(j.Path()+".env", e.Name), "env name", e.Name)
+		}
+		for _, name := range secretRefs(j) {
+			usedSecrets[name] = true
+		}
+	}
+	for i, name := range p.Secrets {
+		if usedSecrets[name] {
+			reserved(pipeline.JoinIndex("secrets", i), "secret", name)
+		}
+	}
 	if !linear(p) {
 		add(diagnostics.Infof("stages", "Jenkins runs these stages one after another (%s), so independent stages do not run concurrently",
 			strings.Join(stageNames(p.Order), ", ")))

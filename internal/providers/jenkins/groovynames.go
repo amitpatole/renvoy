@@ -1,0 +1,142 @@
+package jenkins
+
+import "strings"
+
+// Names that Groovy cannot assign to in an environment block: an assignment to a
+// keyword does not parse, and an assignment to a name that resolves to a class in
+// Groovy's default imports (java.lang, java.util, java.io, java.net, groovy.lang,
+// groovy.util, BigDecimal, BigInteger) is a compile error. The class names were
+// listed from JDK 21 and Groovy 4, including non-public classes, and every entry
+// was confirmed to fail with the Groovy compiler.
+var groovyReserved = func() map[string]bool {
+	m := map[string]bool{}
+	for _, n := range strings.Fields(groovyKeywords + " " + groovyDefaultClasses) {
+		m[n] = true
+	}
+	return m
+}()
+
+const groovyKeywords = `
+	abstract assert boolean break byte case catch char class const continue def default do
+	double else enum extends false final finally float for goto if implements import
+	instanceof int interface long native new null package private protected public return
+	short static strictfp super switch synchronized this threadsafe throw throws transient
+	true try void volatile while
+`
+
+const groovyDefaultClasses = `
+	AbstractCollection AbstractFactory AbstractList AbstractMap AbstractMethodError
+	AbstractQueue AbstractSequentialList AbstractSet AbstractStringBuilder AdaptingMetaClass
+	Appendable ApplicationShutdownHooks ArithmeticException ArrayDeque
+	ArrayIndexOutOfBoundsException ArrayList ArrayPrefixHelpers Arrays
+	ArraysParallelSortHelpers ArrayStoreException AssertionError AssertionStatusDirectives
+	Authenticator AutoCloseable Base64 BaseVirtualThread BenchmarkInterceptor BigDecimal
+	BigInteger BindException Binding BitSet Boolean BootstrapMethodError BufferedInputStream
+	BufferedIterator BufferedOutputStream BufferedReader BufferedWriter Buildable
+	BuilderSupport Byte ByteArrayInputStream ByteArrayOutputStream CacheRequest
+	CacheResponse Calendar Category Character CharacterData CharacterData00 CharacterData01
+	CharacterData02 CharacterData03 CharacterData0E CharacterDataLatin1
+	CharacterDataPrivateUse CharacterDataUndefined CharacterName CharArrayReader
+	CharArrayWriter CharConversionException CharSequence CharsetToolkit Class ClassCache
+	ClassCastException ClassCircularityError ClassFormatError ClassLoader
+	ClassNotFoundException ClassValue Cloneable CloneNotSupportedException Closeable Closure
+	ClosureComparator ClosureException ClosureInvokingMethod Collection Collections CollSer
+	Comparable ComparableTimSort Comparator Comparators CompoundEnumeration
+	ConcurrentModificationException ConditionalSpecialCasing ConfigBinding ConfigObject
+	ConfigSlurper ConnectException Console ContentHandler ContentHandlerFactory
+	CookieHandler CookieManager CookiePolicy CookieStore Currency DatagramPacket
+	DatagramSocket DatagramSocketImpl DatagramSocketImplFactory DataInput DataInputStream
+	DataOutput DataOutputStream Date DecimalDigits DefaultFileSystem DefaultInterface
+	Delegate DelegatesTo DelegatingMetaClass DelegatingScript DelegatingSocketImpl
+	DeleteOnExitHook Deprecated DeprecationException Deque Dictionary Digits Double
+	DoubleSummaryStatistics DualPivotQuicksort DuplicateFormatFlagsException EmptyRange
+	EmptyStackException Enum EnumConstantNotPresentException Enumeration EnumMap EnumSet
+	EOFException Error Eval EventListener EventListenerProxy EventObject Exception
+	ExceptionInInitializerError Expando ExpandoMetaClass ExpandoMetaClassCreationHandle
+	Externalizable Factory FactoryBuilderSupport FactoryInterceptorMetaClass
+	FactoryURLClassLoader FdLibm File FileCleanable FileDescriptor FileFilter
+	FileInputStream FileNameByRegexFinder FilenameFilter FileNameMap FileNotFoundException
+	FileOutputStream FilePermission FilePermissionCollection FileReader FileSystem
+	FileTreeBuilder FileWriter FilterInputStream FilterOutputStream FilterReader
+	FilterWriter Float Flushable FormatFlagsConversionMismatchException FormatItem
+	FormatProcessor Formattable FormattableFlags Formatter FormatterBuilder
+	FormatterClosedException FunctionalInterface GeneratedGroovyProxy Grab GrabConfig
+	GrabExclude GrabResolver Grapes GregorianCalendar GroovyCallable GroovyClassLoader
+	GroovyCodeSource GroovyCollections Groovydoc GroovyInterceptable GroovyObject
+	GroovyObjectSupport GroovyResourceLoader GroovyRuntimeException GroovyScriptEngine
+	GroovyShell GroovySystem GString HashMap HashSet Hashtable HexDigits HexFormat
+	HostPortrange HttpConnectSocketImpl HttpCookie HttpRetryException HttpURLConnection
+	IdentityHashMap IDN IFileNameFinder IllegalAccessError IllegalAccessException
+	IllegalArgumentException IllegalCallerException IllegalFormatArgumentIndexException
+	IllegalFormatCodePointException IllegalFormatConversionException IllegalFormatException
+	IllegalFormatFlagsException IllegalFormatPrecisionException IllegalFormatWidthException
+	IllegalMonitorStateException IllegalPropertyAccessException IllegalStateException
+	IllegalThreadStateException IllformedLocaleException ImmutableCollections
+	IncompatibleClassChangeError IncorrectClosureArgumentsException IndentPrinter
+	IndexOutOfBoundsException Inet4Address Inet4AddressImpl Inet6Address Inet6AddressImpl
+	InetAddress InetAddressImpl InetSocketAddress InheritableThreadLocal InMemoryCookieStore
+	InputMismatchException InputStream InputStreamReader InstantiationError
+	InstantiationException Integer Interceptor InterfaceAddress InternalError
+	InterruptedException InterruptedIOException IntRange IntSummaryStatistics
+	InvalidClassException InvalidObjectException InvalidPropertiesFormatException IOError
+	IOException Iterable Iterator JapaneseImperialCalendar JarURLConnection JumboEnumSet
+	KeyValueHolder LayerInstantiationException Lazy LineNumberInputStream LineNumberReader
+	LinkageError LinkedHashMap LinkedHashSet LinkedList List ListIterator ListResourceBundle
+	ListWithDefault LiveStackFrame LiveStackFrameInfo Locale LocaleISOData Long
+	LongSummaryStatistics MalformedURLException Map MapEntry MapWithDefault MatchException
+	Math MetaArrayLengthProperty MetaBeanProperty MetaClass MetaClassImpl MetaClassRegistry
+	MetaClassRegistryChangeEvent MetaClassRegistryChangeEventListener MetaExpandoProperty
+	MetaMethod MetaObjectProtocol MetaProperty MissingClassException MissingFieldException
+	MissingFormatArgumentException MissingFormatWidthException MissingMethodException
+	MissingPropertyException MissingResourceException Mixin Module ModuleLayer
+	MulticastSocket MutableMetaClass NamedPackage NamedValue NavigableMap NavigableSet
+	NegativeArraySizeException NetMulticastSocket NetPermission NetworkInterface Newify
+	NoClassDefFoundError Node NodeBuilder NodeList NodePrinter NonEmptySequence
+	NoRouteToHostException NoSuchElementException NoSuchFieldError NoSuchFieldException
+	NoSuchMethodError NoSuchMethodException NotActiveException NotSerializableException
+	NullPointerException Number NumberFormatException NumberRange Object ObjectGraphBuilder
+	ObjectInput ObjectInputFilter ObjectInputStream ObjectInputValidation ObjectOutput
+	ObjectOutputStream ObjectRange Objects ObjectStreamClass ObjectStreamConstants
+	ObjectStreamException ObjectStreamField Observable ObservableList ObservableMap
+	ObservableSet Observer OctalDigits Optional OptionalDataException OptionalDouble
+	OptionalInt OptionalLong OrderBy OutOfMemoryError OutputStream OutputStreamWriter
+	Override Package PasswordAuthentication PermutationGenerator PinnedThreadPrinter
+	PipedInputStream PipedOutputStream PipedReader PipedWriter PortUnreachableException
+	PrimitiveIterator PrintStream PrintWriter PriorityQueue Process ProcessBuilder
+	ProcessEnvironment ProcessHandle ProcessHandleImpl ProcessImpl Properties
+	PropertyAccessInterceptor PropertyPermission PropertyPermissionCollection
+	PropertyResourceBundle PropertyValue ProtocolException ProtocolFamily Proxy
+	ProxyGenerator ProxyingConsole ProxyMetaClass ProxySelector PublicMethods
+	PushbackInputStream PushbackReader Queue Random RandomAccess RandomAccessFile Range
+	Readable Reader ReadOnlyPropertyException Record Reference ReflectiveOperationException
+	RegularEnumSet ResourceBundle ResourceConnector ResourceException ResponseCache
+	ReverseOrderDequeView ReverseOrderListView ReverseOrderSortedMapView
+	ReverseOrderSortedSetView Runnable Runtime RuntimeException RuntimePermission
+	SafeVarargs Scanner ScopedValue Script ScriptException SecureCacheResponse
+	SecurityException SecurityManager Sequence SequencedCollection SequencedMap SequencedSet
+	SequenceInputStream Serial SerialCallbackContext Serializable SerializablePermission
+	ServerSocket ServiceConfigurationError ServiceLoader Set Short Shutdown SimpleTimeZone
+	Singleton Socket SocketAddress SocketException SocketImpl SocketImplFactory SocketOption
+	SocketOptions SocketPermission SocketPermissionCollection SocketTimeoutException
+	SocksConsts SocksSocketImpl SortedMap SortedSet Spliterator Spliterators
+	SplittableRandom SpreadListEvaluatingException SpreadMap SpreadMapEvaluatingException
+	Stack StackFrameInfo StackOverflowError StackStreamFactory StackTraceElement StackWalker
+	StandardProtocolFamily StandardSocketOptions StreamCorruptedException StreamTokenizer
+	StrictMath String StringBuffer StringBufferInputStream StringBuilder StringCoding
+	StringConcatHelper StringIndexOutOfBoundsException StringJoiner StringLatin1
+	StringReader StringTemplate StringTokenizer StringUTF16 StringWriter
+	StringWriterIOException SuppressWarnings SyncFailedException System TaskQueue Terminator
+	Thread ThreadBuilders ThreadDeath ThreadGroup ThreadLocal Throwable Timer TimerTask
+	TimerThread TimeZone TimSort TooManyListenersException TracingInterceptor
+	TrampolineClosure TreeMap TreeSet Tripwire Tuple Tuple0 Tuple1 Tuple10 Tuple11 Tuple12
+	Tuple13 Tuple14 Tuple15 Tuple16 Tuple2 Tuple3 Tuple4 Tuple5 Tuple6 Tuple7 Tuple8 Tuple9
+	TypeNotPresentException UncheckedIOException UnixDomainSocketAddress UnixFileSystem
+	UnknownContentHandler UnknownError UnknownFormatConversionException
+	UnknownFormatFlagsException UnknownHostException UnknownServiceException
+	UnsatisfiedLinkError UnsupportedClassVersionError UnsupportedEncodingException
+	UnsupportedOperationException URI URISyntaxException URL URLClassLoader URLConnection
+	URLDecoder UrlDeserializedState URLEncoder URLPermission URLStreamHandler
+	URLStreamHandlerFactory UTFDataFormatException UUID Vector VerifyError VersionProps
+	VirtualMachineError VirtualThread Void WeakHashMap WeakPairMap Writable
+	WriteAbortedException Writer WrongThreadException
+`

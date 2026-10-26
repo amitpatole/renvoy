@@ -282,6 +282,11 @@ GitLab `artifacts:when: always`, Azure `succeededOrFailed()`, Jenkins
   `${`) and `${git.sha}`. Reference other values in the script instead.
 - **GitLab `GIT_STRATEGY`** is set by Renvoy from the job's checkout steps, so a job
   `env` entry with that name is an error.
+- **Jenkins environment names.** Jenkins assigns variables, job `env` entries, and
+  bound secrets as Groovy identifiers in `environment { }`. Groovy keywords (`if`,
+  `class`, `null`) and names of classes Groovy imports by default (`URL`, `UUID`,
+  `Map`, `String`) cannot be assigned there, so they are an error for Jenkins.
+  Step `env` entries use `withEnv` and accept any valid name.
 
 ## Provider extensions
 
