@@ -89,6 +89,10 @@ triggers:
       branches: [main]            # exact branch names
 ```
 
+Cron items are `*`, a number, or a range `a-b`, each optionally followed by
+`/step`, separated by commas; values must be within the field's range and ranges
+must not be reversed.
+
 - A push trigger with neither `branches` nor `tags` fires for every branch and tag.
   With only `branches`, tags do not fire it; with only `tags`, branches do not.
 - **Patterns** are exact names or a prefix ending in `*`. `release/*` matches every
@@ -218,22 +222,26 @@ Custom content may only add to a file:
   GitLab refuses global keywords such as `default`, `include`, `variables`, and
   `image` (new jobs are fine); Bamboo refuses plan-wide keys such as `docker`,
   `variables`, `triggers`, `branches`, and `branch-overrides`.
-- **Jenkinsfile and Java Specs:** balanced code without `\u` escapes and without a
-  bare `/` outside strings and comments (division, regular expression literals,
-  and Groovy slashy strings), whose extent the check cannot determine. Jenkinsfile
+- **Jenkinsfile and Java Specs:** balanced code without `\u` escapes. Jenkinsfile
+  code also may not use a bare `/` outside strings and comments (division,
+  regular expression literals, and Groovy slashy strings), whose extent the
+  check cannot determine; Java has no slashy strings, so division is fine there. Jenkinsfile
   custom code may only add `post { ... }` sections at its top level (pipeline-wide
   directives such as `options`, `environment`, `tools`, and `agent` would apply to
   every generated stage) and may not use `${...}` inside double-quoted strings
   (single-quoted strings such as `sh 'echo ${VAR}'` and escaped `\${VAR}` are fine). The Java Specs
   `customize(Plan)` method is intentionally free to change the plan.
-- **pom.xml:** well-formed, unprefixed elements with unique attributes, comments,
-  and CDATA only, using legal XML characters; no DOCTYPE, ENTITY, ATTLIST, other
+- **pom.xml:** well-formed elements and attributes without `:` in their names,
+  unique attributes, comments, and CDATA only, using legal XML characters
+  (including in character references); no DOCTYPE, ENTITY, ATTLIST, other
   declarations, or processing instructions.
 - **Every format:** valid UTF-8 without carriage returns, Unicode line separators
   (NEL, LS, PS), or invisible format characters (BOM, zero-width, bidirectional
   controls), and no tabs in YAML, all of which parsers read differently. A comment
-  line you add that names a marker in any syntax counts as a marker, so a
-  misspelled block is refused rather than overwritten by `--force`. YAML custom
+  line you add that looks like a marker in any syntax or spelling (for example
+  `# renvoy:begin cusom`, `// renvoy-begin`, or `# RENVOY:START`) counts as a
+  marker attempt, so a misspelled block is refused rather than overwritten by
+  `--force`. YAML custom
   blocks are limited to 256 KiB and 10,000 nodes. Values in `renvoy.yaml` may not
   contain marker text (`renvoy:begin custom` / `renvoy:end custom`).
 

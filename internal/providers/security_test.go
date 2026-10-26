@@ -187,6 +187,12 @@ func TestCustomBlockPoliciesPerProvider(t *testing.T) {
 		{"pom unbound prefix", "bamboo-java", "bamboo-specs/pom.xml", []string{"    <a:b/>"}, false},
 		{"pom duplicate attribute", "bamboo-java", "bamboo-specs/pom.xml", []string{"    <dependency x=\"1\" x=\"2\"/>"}, false},
 		{"pom control character", "bamboo-java", "bamboo-specs/pom.xml", []string{"    <!-- a\x01 -->"}, false},
+		{"pom leading colon name", "bamboo-java", "bamboo-specs/pom.xml", []string{"    <:a/>"}, false},
+		{"pom trailing colon name", "bamboo-java", "bamboo-specs/pom.xml", []string{"    <a:/>"}, false},
+		{"pom surrogate char ref", "bamboo-java", "bamboo-specs/pom.xml", []string{"    <dependency>&#xD800;</dependency>"}, false},
+		{"pom legal char ref", "bamboo-java", "bamboo-specs/pom.xml", []string{"    <dependency><groupId>&#x41;</groupId></dependency>"}, true},
+		{"java division", "bamboo-java", java, []string{"    Plan customize(Plan plan) { int x = 4 / 2; return plan; }"}, true},
+		{"jenkins division still refused", "jenkins", "Jenkinsfile", []string{"    post { always { echo 'x' } } // a", "    def y = 4 / 2"}, false},
 	}
 	for _, c := range cases {
 		f, existing := customExisting(t, c.provider, c.path, c.lines...)

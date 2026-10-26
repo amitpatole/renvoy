@@ -2,6 +2,7 @@ package pipeline
 
 import (
 	"fmt"
+	"reflect"
 	"regexp"
 	"slices"
 	"strconv"
@@ -90,7 +91,7 @@ func (v *validator) run() {
 		v.errorf("kind", "unsupported kind %q", p.Kind).Hint = "the only supported kind is Pipeline"
 	}
 	v.checkName("metadata.name", p.Metadata.Name, "pipeline")
-	v.checkNoMarker("metadata.description", p.Metadata.Description)
+	v.checkNoMarkers(reflect.ValueOf(p).Elem(), "")
 	v.checkTriggers()
 
 	folded := map[string]string{}
@@ -110,7 +111,6 @@ func (v *validator) run() {
 		}
 		v.warnProviderSyntax(path, va.Value)
 		v.checkControlEnv(path, va.Name, va.Value)
-		v.checkNoMarker(path, va.Value)
 		if len(va.Value) > MaxVariableValue {
 			v.errorf(path, "variable value is %d bytes; at most %d are allowed", len(va.Value), MaxVariableValue)
 		}
@@ -357,16 +357,39 @@ func ValidateCron(expr string) error {
 		if !cronFieldRe.MatchString(f) {
 			return fmt.Errorf("cron %s field %q may contain only digits and * / , -", names[i], f)
 		}
-		stepped := strings.Contains(f, "/")
-		for _, part := range strings.FieldsFunc(f, func(r rune) bool { return r == ',' || r == '-' || r == '/' || r == '*' }) {
-			n, err := strconv.Atoi(part)
-			if err != nil || n < 0 || n > 59 {
-				return fmt.Errorf("cron %s field %q is out of range", names[i], f)
-			}
-			if !stepped && (n < limits[i][0] || n > limits[i][1]) {
-				return fmt.Errorf("cron %s value %d is outside %d-%d", names[i], n, limits[i][0], limits[i][1])
+		for _, item := range strings.Split(f, ",") {
+			if err := cronItem(item, limits[i][0], limits[i][1]); err != nil {
+				return fmt.Errorf("cron %s field %q: %w", names[i], f, err)
 			}
 		}
+	}
+	return nil
+}
+
+var cronItemRe = regexp.MustCompile(`^(\*|[0-9]{1,2}(?:-[0-9]{1,2})?)(?:/([0-9]{1,2}))?$`)
+
+// cronItem validates one comma-separated cron item: *, n, a-b, optionally /step.
+func cronItem(item string, lo, hi int) error {
+	m := cronItemRe.FindStringSubmatch(item)
+	if m == nil {
+		return fmt.Errorf("%q is not *, a number, or a range, optionally with /step", item)
+	}
+	if m[2] != "" {
+		if step, _ := strconv.Atoi(m[2]); step < 1 || step > hi {
+			return fmt.Errorf("step %d must be between 1 and %d", step, hi)
+		}
+	}
+	if m[1] == "*" {
+		return nil
+	}
+	bounds := strings.Split(m[1], "-")
+	a, _ := strconv.Atoi(bounds[0])
+	b := a
+	if len(bounds) == 2 {
+		b, _ = strconv.Atoi(bounds[1])
+	}
+	if a < lo || b > hi || a > b {
+		return fmt.Errorf("%q is outside %d-%d or reversed", item, lo, hi)
 	}
 	return nil
 }
@@ -522,7 +545,6 @@ func (v *validator) checkEnv(path string, env Vars, axes map[string]bool) {
 				d.Hint = "run steps already receive the secret as ${secrets." + e.Name + "}; to pass it to a tool under this name, reference it in the script"
 			}
 		}
-		v.checkNoMarker(ep, e.Value)
 		v.checkTemplate(ep, e.Value, axes, NSVariables, NSSecrets, NSGit, NSMatrix)
 		v.warnProviderSyntax(ep, e.Value)
 		v.checkControlEnv(ep, e.Name, e.Value)
@@ -658,6 +680,50 @@ func (v *validator) checkNoMarker(path, value string) {
 	}
 }
 
+// checkNoMarkers applies checkNoMarker to every string in the pipeline, so no
+// field can place a marker line into generated output.
+func (v *validator) checkNoMarkers(val reflect.Value, path string) {
+	switch val.Kind() {
+	case reflect.Pointer:
+		if !val.IsNil() {
+			v.checkNoMarkers(val.Elem(), path)
+		}
+	case reflect.String:
+		v.checkNoMarker(path, val.String())
+	case reflect.Struct:
+		t := val.Type()
+		for i := 0; i < t.NumField(); i++ {
+			tag := strings.Split(t.Field(i).Tag.Get("yaml"), ",")[0]
+			if tag == "" || tag == "-" || t.Field(i).Type == reflect.TypeOf(Extensions{}) {
+				continue
+			}
+			v.checkNoMarkers(val.Field(i), JoinKey(path, tag))
+		}
+	case reflect.Slice:
+		switch x := val.Interface().(type) {
+		case Vars:
+			for _, e := range x {
+				v.checkNoMarker(JoinKey(path, e.Name), e.Value)
+			}
+			return
+		case Matrix:
+			for _, a := range x {
+				for i, value := range a.Values {
+					v.checkNoMarker(JoinIndex(JoinKey(path, a.Name), i), value)
+				}
+			}
+			return
+		}
+		for i := 0; i < val.Len(); i++ {
+			v.checkNoMarkers(val.Index(i), JoinIndex(path, i))
+		}
+	case reflect.Map:
+		for _, k := range val.MapKeys() {
+			v.checkNoMarker(JoinKey(path, k.String()), val.MapIndex(k).String())
+		}
+	}
+}
+
 // takenName reports whether name matches a variable or secret, ignoring case.
 func (v *validator) takenName(name string) bool {
 	for _, va := range v.p.Variables {
@@ -781,11 +847,7 @@ func (v *validator) checkStep(path string, s *Step, j *Job, axes map[string]bool
 	if strings.ContainsAny(s.Name, "\n\r") {
 		v.errorf(path+".name", "step names must be a single line")
 	}
-	v.checkNoMarker(path+".name", s.Name)
-	v.checkNoMarker(path+".run", s.Run)
-	for _, w := range s.With {
-		v.checkNoMarker(JoinKey(path+".with", w.Name), w.Value)
-	}
+
 	v.warnProviderSyntax(path+".name", s.Name)
 	kind := kinds[0]
 	v.checkCondition(path+".when", s.When)

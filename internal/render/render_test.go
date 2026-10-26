@@ -371,3 +371,35 @@ func TestNearMissCountsGeneratedCopies(t *testing.T) {
 		t.Fatalf("--force would drop custom content between extra near-miss markers, conflicts: %v", c)
 	}
 }
+
+// Round 8: misspelled markers in any form are marker attempts, so --force must
+// refuse rather than discard the content between them.
+func TestNearMissMarkerVariantsBlockForce(t *testing.T) {
+	gen := providers.GeneratedFile{Path: "ci/out.yml", Comment: "#", YAML: true,
+		Content: []byte("a: 1\n\n" + render.CustomBlock("#", ""))}
+	for _, v := range [][2]string{
+		{"# renvoy:begin cusom", "# renvoy:end cusom"},
+		{"# renvoy:begin", "# renvoy:end"},
+		{"# renvoy:begin-custom", "# renvoy:end-custom"},
+		{"# renvoy:begin\u00a0custom", "# renvoy:end\u00a0custom"},
+		{"# renvoy\u00a0:begin custom", "# renvoy\u00a0:end custom"},
+		{"# renvoy:begin cus\u00adtom", "# renvoy:end cus\u00adtom"},
+		{"#renvoy:begin cutom", "#renvoy:end cutom"},
+		{"# renvoy begin custom", "# renvoy end custom"},
+		{"# renvoy-begin-custom", "# renvoy-end-custom"},
+		{"# renvoy_begin_custom", "# renvoy_end_custom"},
+		{"# RENVOY:START", "# RENVOY:STOP"},
+	} {
+		root := t.TempDir()
+		if err := os.MkdirAll(filepath.Join(root, "ci"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		existing := "a: 1\n" + v[0] + "\nkeep: me\n" + v[1] + "\n"
+		if err := os.WriteFile(filepath.Join(root, "ci", "out.yml"), []byte(existing), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if _, c := plan(t, root, gen, true); len(c) != 1 {
+			t.Errorf("--force would discard content between %q and %q", v[0], v[1])
+		}
+	}
+}

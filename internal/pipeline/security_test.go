@@ -341,3 +341,25 @@ func TestMoreToolNamesRejectBranchValues(t *testing.T) {
 		expectError(t, diags, "stages[0].jobs[0].env."+name, "cannot be set from ${git.branch}")
 	}
 }
+
+// Round 8: every string field is checked for marker text, not a chosen few.
+func TestMarkerTextInAnyField(t *testing.T) {
+	src := strings.Replace(minimal, "          - run: make test\n",
+		"          - buildImage:\n              image: app:1\n              buildArgs:\n                NOTE: \"x\\n# renvoy:begin custom\\ny\"\n", 1)
+	_, diags := parse(t, src)
+	expectError(t, diags, "stages[0].jobs[0].steps[0].buildImage.buildArgs.NOTE", "marker text")
+}
+
+// Round 8: cron items must be well-formed, in range, and not reversed.
+func TestCronItems(t *testing.T) {
+	for _, bad := range []string{"*/0 * * * *", "5-1 0 * * *", "1-2-3 * * * *", "*/5/5 * * * *", "0 0 * * ,", "*-* * * * *", "60 * * * *", "0 0 0 * *"} {
+		if err := pipeline.ValidateCron(bad); err == nil {
+			t.Errorf("%q was accepted", bad)
+		}
+	}
+	for _, good := range []string{"0 3 * * 1-5", "*/15 * * * *", "0 0 1,15 * *", "5-10/2 * * * *", "0 0 * * 0"} {
+		if err := pipeline.ValidateCron(good); err != nil {
+			t.Errorf("%q: %v", good, err)
+		}
+	}
+}

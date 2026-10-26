@@ -14,6 +14,7 @@ import (
 	"reflect"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"unicode"
 	"unicode/utf8"
@@ -67,7 +68,10 @@ type block struct {
 
 // markerMention catches near-miss markers (any case or spacing) so they are
 // refused instead of silently ignored.
-var markerMention = regexp.MustCompile(`(?i)renvoy\s*:\s*(begin|end)\s*custom`)
+// It is deliberately broad: "renvoy", a few separators of any kind (spaces, NBSP,
+// colons, hyphens, invisible characters), then begin/end/start/stop. Identical
+// lines in the generated output are excused by the caller.
+var markerMention = regexp.MustCompile(`(?i)renvoy[^A-Za-z0-9]{0,8}(?:begin|end|start|stop)`)
 
 // findBlock locates the custom block in lines. It returns ok=false when there is none.
 // findBlock locates the custom block. nearMiss, when set, decides whether a line
@@ -340,6 +344,15 @@ func checkCustom(f providers.GeneratedFile, generated, combined []byte, custom [
 				return errors.New("the custom block may not contain DOCTYPE, ENTITY, ATTLIST, or other declarations")
 			}
 		}
+		if xmlColonName.MatchString(text) {
+			return errors.New("the custom block uses a ':' in an element or attribute name, which pom.xml does not support")
+		}
+		for _, m := range xmlCharRef.FindAllStringSubmatch(text, -1) {
+			n, err := strconv.ParseInt(strings.TrimPrefix(strings.ToLower(m[1]), "x"), map[bool]int{true: 16, false: 10}[strings.HasPrefix(strings.ToLower(m[1]), "x")], 32)
+			if err != nil || !isXMLChar(rune(n)) {
+				return fmt.Errorf("the custom block has the character reference &#%s;, which is not a legal XML character", m[1])
+			}
+		}
 		dec := xml.NewDecoder(strings.NewReader("<custom>" + strings.Join(custom, "\n") + "</custom>"))
 		dec.Strict = true
 		for {
@@ -363,7 +376,7 @@ func checkCustom(f providers.GeneratedFile, generated, combined []byte, custom [
 		jenkins := path.Base(f.Path) == "Jenkinsfile"
 		var top strings.Builder
 		usesGString := false
-		if err := balanced(code, func(c byte, depth int) {
+		if err := balanced(code, jenkins, func(c byte, depth int) {
 			if depth == 0 {
 				top.WriteByte(c)
 			}
@@ -488,7 +501,7 @@ func singleYAMLDocument(b []byte) error {
 // balanced reports unbalanced brackets. When code is non-nil it is called with
 // each character outside strings and comments and the bracket depth before it
 // (a string is reported as '"' and a comment as a single space).
-func balanced(src string, code func(c byte, depth int), onString func(quote, body string)) error {
+func balanced(src string, groovy bool, code func(c byte, depth int), onString func(quote, body string)) error {
 	if code == nil {
 		code = func(byte, int) {}
 	}
@@ -557,9 +570,12 @@ func balanced(src string, code func(c byte, depth int), onString func(quote, bod
 				}
 				stack = stack[:len(stack)-1]
 			case '/':
-				// A bare slash may start a Groovy slashy string (/.../ or $/.../$)
-				// whose extent depends on context, so it is not allowed.
-				return errors.New("a bare '/' (division or a slashy string) is not allowed in custom code; use quoted strings")
+				// In Groovy a bare slash may start a slashy string (/.../ or $/.../$)
+				// whose extent depends on context, so it is not allowed there. Java
+				// has no slashy strings.
+				if groovy {
+					return errors.New("a bare '/' (division or a slashy string) is not allowed in Jenkinsfile custom code; use quoted strings")
+				}
 			}
 			i++
 		}
@@ -628,6 +644,13 @@ func checkXMLToken(tok xml.Token) error {
 	}
 	return nil
 }
+
+var (
+	// xmlColonName finds a ':' in an element name or an attribute name.
+	xmlColonName = regexp.MustCompile(`</?[^\s!?/>]*:|\s[^\s=<>"']*:[^\s=<>"']*\s*=`)
+	// xmlCharRef finds numeric character references.
+	xmlCharRef = regexp.MustCompile(`&#([xX][0-9A-Fa-f]+|[0-9]+);`)
+)
 
 // isXMLChar reports characters allowed in XML 1.0 documents.
 func isXMLChar(r rune) bool {

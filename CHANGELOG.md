@@ -118,3 +118,10 @@ All notable changes to this project are documented here. The format follows
 - Jenkinsfile custom blocks treat strings at the top level as code (`'agent'
   'any'` is refused) and allow escaped `\${...}`; pom.xml custom content must use
   unprefixed names, unique attributes, and legal XML characters.
+- Near-miss marker detection is broad again (any spelling or separator after
+  "renvoy", including `begin`/`end`/`start`/`stop`), restoring `--force`
+  protection for misspelled custom blocks that round 7's narrower pattern lost;
+  the marker-text check on `renvoy.yaml` covers every string field.
+- pom.xml custom content may not use `:` in names or character references to
+  illegal XML characters; cron items are parsed strictly (no zero steps, reversed
+  ranges, or malformed items); Java custom code may use division.
