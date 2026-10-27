@@ -375,7 +375,11 @@ func ValidateCron(expr string) error {
 	names := [5]string{"minute", "hour", "day-of-month", "month", "day-of-week"}
 	for i, f := range fields {
 		if !cronFieldRe.MatchString(f) {
-			return fmt.Errorf("cron %s field %q may contain only digits and * / , -", names[i], f)
+			err := fmt.Errorf("cron %s field %q may contain only digits and * / , -", names[i], f)
+			if strings.ContainsFunc(f, unicode.IsLetter) {
+				err = fmt.Errorf("%w; use numbers instead of names (0-6 for Sunday to Saturday, 1-12 for January to December)", err)
+			}
+			return err
 		}
 		for _, item := range strings.Split(f, ",") {
 			if err := cronItem(item, limits[i][0], limits[i][1]); err != nil {
@@ -506,6 +510,8 @@ func (v *validator) checkJob(path string, j *Job) {
 		}
 		if strings.ContainsAny(j.Container.Options, "\n\r") {
 			v.errorf(cp+".options", "container options must be a single line")
+		} else if strings.ContainsFunc(j.Container.Options, unicode.IsControl) {
+			v.errorf(cp+".options", "container options must not contain control characters")
 		} else if j.Container.Options != "" && strings.TrimSpace(j.Container.Options) == "" {
 			// Bamboo refuses blank docker run arguments.
 			v.errorf(cp+".options", "container options must not be blank; remove the field instead")

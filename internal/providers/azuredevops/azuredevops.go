@@ -145,6 +145,11 @@ func (pr *Provider) Validate(p *pipeline.Pipeline) diagnostics.List {
 	diags = append(diags, extDiags...)
 	add := func(d diagnostics.Diagnostic) { diags = append(diags, d.WithProvider(Name)) }
 
+	for _, j := range p.AllJobs() {
+		if j.TimeoutMinutes > 360 {
+			add(diagnostics.Warningf(j.Path()+".timeoutMinutes", "Microsoft-hosted agents stop jobs after 360 minutes; %d applies only on self-hosted agents", j.TimeoutMinutes))
+		}
+	}
 	// Azure does not pass variables with these prefixes to tasks and scripts.
 	reserved := func(path, kind, name string) {
 		for _, prefix := range []string{"ENDPOINT", "INPUT", "SECRET", "PATH", "SECUREFILE"} {

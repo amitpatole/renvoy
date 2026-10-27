@@ -155,6 +155,29 @@ func (pr *Provider) Validate(p *pipeline.Pipeline) diagnostics.List {
 	diags = append(diags, extDiags...)
 	add := func(d diagnostics.Diagnostic) { diags = append(diags, d.WithProvider(Name)) }
 
+	// GitLab's predefined variables use these prefixes; some cannot be overridden.
+	predefined := func(path, name string) {
+		if up := strings.ToUpper(name); strings.HasPrefix(up, "CI_") || strings.HasPrefix(up, "GITLAB_") {
+			add(diagnostics.Warningf(path, "%q uses a prefix of GitLab's predefined variables, which it may ignore or that may change what GitLab does", name).
+				WithHint("rename it; GitLab does not let pipelines override some predefined variables, such as CI_ENVIRONMENT_URL"))
+		}
+	}
+	for _, v := range p.Variables {
+		predefined(pipeline.JoinKey("variables", v.Name), v.Name)
+	}
+	for _, j := range p.AllJobs() {
+		for _, e := range j.Env {
+			predefined(pipeline.JoinKey(j.Path()+".env", e.Name), e.Name)
+		}
+		for _, s := range j.Steps {
+			for _, e := range s.Env {
+				predefined(pipeline.JoinKey(s.Path()+".env", e.Name), e.Name)
+			}
+		}
+		for _, axis := range j.Matrix {
+			predefined(pipeline.JoinKey(j.Path()+".matrix", axis.Name), axis.Name)
+		}
+	}
 	artifacts := compiler.Artifacts(p)
 	for _, j := range p.AllJobs() {
 		jp := j.Path()

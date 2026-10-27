@@ -557,3 +557,16 @@ func TestRound17PathsAndOptions(t *testing.T) {
 		}
 	}
 }
+
+// Round 18: container options with control characters (Java counts U+001C to
+// U+001F as whitespace, so Bamboo saw them as blank), and a hint for cron names.
+func TestRound18OptionsAndCronNames(t *testing.T) {
+	for _, opt := range []string{"\\u001f", "\\u001c \\u001d", "--user root\\u001e"} {
+		src := strings.Replace(minimal, "        steps:\n", "        container: {image: alpine, options: \""+opt+"\"}\n        steps:\n", 1)
+		_, diags := parse(t, src)
+		expectError(t, diags, "stages[0].jobs[0].container.options", "control characters")
+	}
+	src := strings.Replace(minimal, "push: {}", "schedules: [{cron: \"0 9 * * MON-FRI\", branches: [main]}]", 1)
+	_, diags := parse(t, src)
+	expectError(t, diags, "triggers.schedules[0].cron", "use numbers instead of names")
+}

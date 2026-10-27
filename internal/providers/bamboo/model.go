@@ -9,6 +9,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"unicode"
 
 	"github.com/amitpatole/renvoy/internal/compiler"
 	"github.com/amitpatole/renvoy/internal/diagnostics"
@@ -149,7 +150,9 @@ func decode(p *pipeline.Pipeline, provider string) (extension, diagnostics.List)
 			diags = append(diags, diagnostics.Errorf(rp, "unknown runner %q", os).WithHint("use linux, windows, or macos"))
 		}
 		for i, r := range ext.Requirements[os] {
-			if !requirementRe.MatchString(r) {
+			key, value, hasValue := strings.Cut(r, "=")
+			if !requirementRe.MatchString(r) || strings.TrimSpace(key) == "" || (hasValue && strings.TrimSpace(value) == "") ||
+				strings.ContainsFunc(r, unicode.IsControl) {
 				diags = append(diags, diagnostics.Errorf(pipeline.JoinIndex(rp, i), "invalid requirement %q", r).
 					WithHint(`use a capability key, or key=regex to match its value`))
 			}

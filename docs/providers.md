@@ -294,11 +294,18 @@ GitLab `artifacts:when: always`, Azure `succeededOrFailed()`, Jenkins
   those prefixes are an error for Azure (for example `SECRET_KEY`, `INPUT_DIR`).
 - **GitHub limits.** Schedules that would fire more often than every 5 minutes
   warn, since GitHub runs them at most that often; a job may upload at most 500
-  artifacts (actions/upload-artifact).
+  artifacts (actions/upload-artifact); a generated workflow over 500 KB is an
+  error, since GitHub does not start runs from it. Timeouts over 360 minutes warn
+  on GitHub and Azure, whose hosted runners stop jobs after 6 hours.
 - **Bamboo password variables.** Bamboo treats variables whose names contain
   `password`, `secret`, `passphrase`, or `sshkey` as passwords and refuses
   plain-text values for them in specs, so such variables are an error for both
   Bamboo providers; declare them under `secrets`.
+- **GitLab predefined variables.** Names starting with `CI_` or `GITLAB_` warn,
+  because GitLab defines variables with those prefixes and does not let
+  pipelines override some of them (`CI_ENVIRONMENT_URL`, `CI_PAGES_URL`).
+- **Bamboo requirements** need a non-blank capability key and, after `=`, a
+  non-blank match value without control characters.
 - **GitLab limits.** A job may need at most 50 jobs by default (`ci_max_needs`
   on self-managed instances), so more is a warning; `parallel:matrix` creates
   at most 200 jobs, so a larger matrix is an error.

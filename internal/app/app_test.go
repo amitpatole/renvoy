@@ -3,6 +3,7 @@ package app_test
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -421,4 +422,28 @@ func TestInitForceBacksUp(t *testing.T) {
 	if info, _ := os.Stat(path); runtime.GOOS != "windows" && info.Mode().Perm() != 0o600 {
 		t.Fatalf("mode %v", info.Mode().Perm())
 	}
+}
+
+// Round 18: GitHub does not start runs from workflow files over 500 KB, so a
+// larger generated workflow is refused before anything is written.
+func TestGitHubWorkflowSizeLimit(t *testing.T) {
+	var b strings.Builder
+	b.WriteString("apiVersion: renvoy.dev/v1alpha1\nkind: Pipeline\nmetadata: {name: big}\ntriggers: {push: {}}\nstages:\n  - name: s\n    jobs:\n")
+	for j := 0; j < 400; j++ {
+		fmt.Fprintf(&b, "      - name: j%d\n        steps:\n", j)
+		for s := 0; s < 30; s++ {
+			fmt.Fprintf(&b, "          - run: echo MARKER-%03d-%02d-abcdefghijklmnop\n", j, s)
+		}
+	}
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "renvoy.yaml"), b.String())
+	r := run(t, dir, "generate", "-p", "github-actions")
+	expectCode(t, r, app.ExitIncompatible)
+	if !strings.Contains(r.stderr, "does not run files over") || !strings.Contains(r.stderr, "no files were written") {
+		t.Fatalf("stderr: %s", r.stderr)
+	}
+	if _, err := os.Stat(filepath.Join(dir, ".github")); !os.IsNotExist(err) {
+		t.Fatalf("files were written: %v", err)
+	}
+	expectCode(t, run(t, dir, "generate", "-p", "gitlab", "--dry-run"), app.ExitOK)
 }

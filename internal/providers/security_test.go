@@ -465,3 +465,27 @@ func TestRound17ProviderRules(t *testing.T) {
 		}
 	}
 }
+
+// Round 18: hosted-runner timeouts, GitLab predefined variable prefixes, and
+// Bamboo requirements with blank keys or match values.
+func TestRound18ProviderRules(t *testing.T) {
+	src := strings.Replace(round14Base, "        steps:", "        timeoutMinutes: 720\n        steps:", 1)
+	for _, prov := range []string{"github-actions", "azure-devops"} {
+		if d := round14(t, prov, src); !hasDiag(d, diagnostics.Warning, "stages[0].jobs[0].timeoutMinutes", "360 minutes") {
+			t.Errorf("%s timeout: %v", prov, d)
+		}
+	}
+	src = strings.Replace(round14Base, "extensions:\n", "variables: {CI_ENVIRONMENT_URL: x, MY_URL: y}\nextensions:\n", 1)
+	d := round14(t, "gitlab", src)
+	if !hasDiag(d, diagnostics.Warning, "variables.CI_ENVIRONMENT_URL", "predefined") || hasDiag(d, diagnostics.Warning, "variables.MY_URL", "predefined") {
+		t.Errorf("gitlab predefined: %v", d)
+	}
+	for req, ok := range map[string]bool{"system.docker.executable": true, "os=Linux.*": true, " ": false, " =x": false, "k= ": false, "k=\\t": false, "k=\\u001f": false} {
+		src := strings.Replace(round14Base, "planKey: PLAN}", "planKey: PLAN, requirements: {linux: [\""+req+"\"]}}", 1)
+		for _, prov := range []string{"bamboo", "bamboo-java"} {
+			if got := !hasDiag(round14(t, prov, src), diagnostics.Error, "extensions.bamboo.requirements.linux[0]", "invalid requirement"); got != ok {
+				t.Errorf("%s requirement %q: accepted=%v, want %v", prov, req, got, ok)
+			}
+		}
+	}
+}

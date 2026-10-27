@@ -235,6 +235,19 @@ func (e *env) plan(ctx context.Context, file, output string, provs []providers.P
 		}
 		files = append(files, f...)
 	}
+	var tooLarge diagnostics.List
+	for _, f := range files {
+		if f.MaxBytes > 0 && len(f.Content) > f.MaxBytes {
+			tooLarge = append(tooLarge, diagnostics.Diagnostic{Severity: diagnostics.Error, File: f.Path,
+				Message: fmt.Sprintf("the generated file is %d bytes; the target platform does not run files over %d bytes", len(f.Content), f.MaxBytes),
+				Hint:    "split the pipeline or reduce the number of jobs and steps"})
+		}
+	}
+	if len(tooLarge) > 0 {
+		e.printDiags(tooLarge, "text")
+		fmt.Fprintln(e.stderr, "\nno files were written")
+		return nil, "", exitError{ExitIncompatible}
+	}
 	planned, conflicts, err := render.Plan(outDir, files, source, force)
 	if err != nil {
 		return nil, "", err

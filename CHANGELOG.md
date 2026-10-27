@@ -177,3 +177,9 @@ All notable changes to this project are documented here. The format follows
   import refuses; blank `container.options` (Bamboo rejected blank docker run
   arguments) and paths with control or format characters, or segments ending
   in `.` or a space, are rejected.
+- GitHub refuses generated workflows over 500 KB (GitHub does not start runs
+  from them) and warns about timeouts over 360 minutes, as does Azure; GitLab
+  warns about `CI_*` and `GITLAB_*` names; Bamboo rejects requirements with a
+  blank key or match value; container options with control characters are
+  rejected (Bamboo, following Java, read U+001C to U+001F as blank); cron fields
+  with day or month names get a hint to use numbers.

@@ -188,6 +188,11 @@ func (pr *Provider) Validate(p *pipeline.Pipeline) diagnostics.List {
 			}
 		}
 	}
+	for _, j := range p.AllJobs() {
+		if j.TimeoutMinutes > maxHostedMinutes {
+			add(diagnostics.Warningf(j.Path()+".timeoutMinutes", "GitHub-hosted runners stop jobs after %d minutes; %d applies only on self-hosted runners", maxHostedMinutes, j.TimeoutMinutes))
+		}
+	}
 	for i, s := range p.Triggers.Schedules {
 		if minGap(pipeline.CronMinutes(s.Cron)) < 5 {
 			add(diagnostics.Warningf(pipeline.JoinIndex("triggers.schedules", i)+".cron",
@@ -282,6 +287,9 @@ func (pr *Provider) Render(_ context.Context, p *pipeline.Pipeline, _ providers.
 		Content: body,
 		Comment: providers.CommentHash,
 		YAML:    true,
+		// GitHub does not start runs from workflow files over 500 KB; leave room
+		// for the generated header.
+		MaxBytes: 500*1024 - 1024,
 		// Every other top-level key (env, defaults, permissions, on) applies to the
 		// generated jobs; jobs cannot be added because "jobs" is generated.
 		CustomKeys: providers.CustomKeyPolicy{Allowed: []string{"concurrency", "run-name"}},
@@ -666,6 +674,9 @@ func sortedKeys[V any](m map[string]V) []string {
 	sort.Strings(keys)
 	return keys
 }
+
+// maxHostedMinutes is the longest job GitHub-hosted runners run.
+const maxHostedMinutes = 360
 
 // maxJobArtifacts is actions/upload-artifact's limit on artifacts per job.
 const maxJobArtifacts = 500

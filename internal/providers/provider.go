@@ -52,6 +52,8 @@ type GeneratedFile struct {
 	CommentEnd string
 	// YAML marks content that must remain valid YAML after custom blocks are spliced in.
 	YAML bool
+	// MaxBytes, when set, is the largest file the target platform accepts.
+	MaxBytes int
 	// CustomKeys limits the top-level keys a YAML custom block may add. Keys that
 	// apply to every generated job (global defaults, environment, includes) would
 	// change generated behavior while leaving generated sections untouched.
