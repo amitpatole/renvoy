@@ -657,3 +657,37 @@ func TestBambooJavaStaysWithinClassLimits(t *testing.T) {
 		t.Errorf("oversized job: %v", d)
 	}
 }
+
+func TestRound21ProviderRules(t *testing.T) {
+	job := func(extra string) string {
+		return strings.Replace(round14Base, "        steps:", extra+"        steps:", 1)
+	}
+	if out := render19(t, "jenkins", job("        when: {branches: [\"release*\"]}\n")); !strings.Contains(out, "not { buildingTag() }") || !strings.Contains(out, "not { changeRequest() }") {
+		t.Errorf("jenkins branch condition matches tags and pull requests:\n%s", out)
+	}
+	if out := render19(t, "azure-devops", job("        env: {BRANCH_NAME: \"${git.branch}\"}\n")); !strings.Contains(out, "'refs/tags/', '')") {
+		t.Errorf("azure branch keeps refs/tags/:\n%s", out)
+	}
+	src := strings.Replace(round14Base, "push: {}", "pullRequest: {}", 1)
+	for _, prov := range []string{"bamboo", "bamboo-java"} {
+		if d := round14(t, prov, src); !hasDiag(d, diagnostics.Warning, "triggers.pullRequest", "also builds every push") {
+			t.Errorf("%s pull-request-only: %v", prov, d)
+		}
+	}
+	manual := strings.Replace(round14Base, "push: {}", "manual: {}", 1)
+	if out := render19(t, "bamboo", manual); !strings.Contains(out, "create: manually") {
+		t.Errorf("bamboo plan branches not manual:\n%s", out)
+	}
+	if out := render19(t, "bamboo-java", manual); !strings.Contains(out, "createManually()") {
+		t.Error("bamboo-java plan branches not manual")
+	}
+	win := strings.Replace(round14Base, "        steps: [{run: echo MARKER}]", "        runsOn: windows\n        steps: [{run: echo MARKER, shell: sh}]", 1)
+	if d := round14(t, "github-actions", win); !hasDiag(d, diagnostics.Error, "stages[0].jobs[0].steps[0].shell", "only on Linux and macOS") {
+		t.Errorf("github sh on windows: %v", d)
+	}
+	uses := strings.Replace(round14Base, "        steps: [{run: echo MARKER}]\n",
+		"        steps:\n          - uses: actions/upload-artifact@v4\n            with: {name: test-results-j, path: x}\n          - publishTestResults: {path: r/a.xml}\n", 1)
+	if d := round14(t, "github-actions", uses); !hasDiag(d, diagnostics.Error, "stages[0].jobs[0].steps[0].with.name", "reserved for test results") {
+		t.Errorf("github raw upload-artifact: %v", d)
+	}
+}

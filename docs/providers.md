@@ -323,6 +323,18 @@ GitLab `artifacts:when: always`, Azure `succeededOrFailed()`, Jenkins
   each task in its own method, and reports an error for a job that would still
   exceed the limits (for example, thousands of requirements); split the job or
   use the `bamboo` provider.
+- **Bamboo always builds the plan's branch.** Bamboo polls the plan repository,
+  so pushes to the branch it uses build even with a pull-request-only trigger or
+  a branch filter that does not match it; Renvoy warns. Plans without plan
+  branches set `branches: create: manually` explicitly.
+- **Jenkins branch conditions** add `not { buildingTag() }` and
+  `not { changeRequest() }`, because Jenkins sets `BRANCH_NAME` for tag and pull
+  request builds too (`PR-12`, `v1.0`).
+- **`${git.branch}` on tag builds** is the tag name on every provider; Azure
+  strips both `refs/heads/` and `refs/tags/`.
+- **GitHub on Windows** rejects `shell: sh`, which GitHub supports only on Linux
+  and macOS runners. A raw `actions/upload-artifact` step is checked against the
+  `test-results-` names too.
 - **Jenkins schedules** that restrict both the day of month and the day of week
   are an error: Jenkins runs them only on days matching both fields, while
   cron, GitHub, GitLab, and Azure run them on days matching either.

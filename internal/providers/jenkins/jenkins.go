@@ -534,6 +534,12 @@ func (r *renderer) directives(w *writer, j *pipeline.Job) {
 		if r.cfg.jobs[j].Input != nil {
 			w.line("beforeInput true")
 		}
+		if slices.ContainsFunc(conds, func(c *pipeline.Condition) bool { return len(c.Branches) > 0 }) {
+			// BRANCH_NAME is also set for tag and pull request builds, which
+			// branch conditions never match.
+			w.line("not { buildingTag() }")
+			w.line("not { changeRequest() }")
+		}
 		for _, c := range conds {
 			writeCondition(w, c)
 		}

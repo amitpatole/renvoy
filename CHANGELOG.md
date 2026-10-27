@@ -206,3 +206,11 @@ All notable changes to this project are documented here. The format follows
   (deeper patterns overflowed Java's stack); job keys stay within 40
   characters; quoted `--network` and `--entrypoint` options are rejected on
   GitHub.
+- Jenkins branch conditions exclude tag and pull request builds (Jenkins sets
+  `BRANCH_NAME` to the tag or `PR-<n>`, so `release*` also ran on tag
+  `release-1.0`). Cron fields must be separated by spaces; tabs, newlines, and
+  Unicode spaces were accepted and copied into GitHub, Azure, and Jenkins files.
+  Bamboo warns that it always builds pushes to the plan's branch, and plans
+  without plan branches say `create: manually`. Azure `${git.branch}` strips
+  `refs/tags/`. GitHub rejects `shell: sh` on Windows and checks raw
+  `actions/upload-artifact` steps against the reserved `test-results-` prefix.

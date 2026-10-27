@@ -100,6 +100,9 @@ func (pr *YAMLProvider) Render(_ context.Context, p *pipeline.Pipeline, _ provid
 		root.Set("triggers", trig)
 	}
 	switch pl.BranchCreate {
+	case "":
+		// Say so explicitly: no plan branches are created.
+		root.Set("branches", shared.NewMap().Set("create", "manually"))
 	case "for-pull-request":
 		root.Set("branches", shared.NewMap().Set("create", "for-pull-request"))
 	case "for-new-branch":

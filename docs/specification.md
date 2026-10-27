@@ -109,8 +109,12 @@ must not be reversed.
 
 - A push trigger with neither `branches` nor `tags` fires for every branch and tag.
   With only `branches`, tags do not fire it; with only `tags`, branches do not.
-- **Patterns** are exact names or a prefix ending in `*`. `release/*` matches every
-  name starting with `release/`, including nested names such as `release/1.2/rc`.
+- **Patterns** are exact names or a prefix ending in `*`, using letters, digits,
+  `.`, `_`, `/`, and `-`. `release/*` matches every name starting with
+  `release/`, including nested names such as `release/1.2/rc`. Branch conditions
+  match branch builds only, never tag or pull request builds.
+- **Cron** expressions separate their five fields with spaces; tabs, newlines,
+  and Unicode spaces are an error.
 - `{}` enables a trigger. An empty value (`pullRequest:`) is an error, so a
   forgotten value is never silently ignored.
 

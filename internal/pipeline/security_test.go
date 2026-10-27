@@ -588,3 +588,11 @@ func TestRound19TimeoutAndCronHint(t *testing.T) {
 		}
 	}
 }
+
+func TestRound21CronWhitespace(t *testing.T) {
+	for _, cron := range []string{`0 3 * * 1`, `0\t3 * * *`, `0 3\n* * *`, `0 3 * * 1 `, `0\u000b3 * * *`} {
+		src := strings.Replace(minimal, "push: {}", "schedules: [{cron: \""+cron+"\", branches: [main]}]", 1)
+		_, diags := parse(t, src)
+		expectError(t, diags, "triggers.schedules[0].cron", "separate its fields with spaces")
+	}
+}

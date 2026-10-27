@@ -22,7 +22,7 @@ const Name = "azure-devops"
 const (
 	branchVar      = "RENVOY_GIT_BRANCH"
 	containerVar   = "RENVOY_CONTAINER_IMAGE"
-	branchRuntime  = "$[ replace(coalesce(variables['System.PullRequest.SourceBranch'], variables['Build.SourceBranch']), 'refs/heads/', '') ]"
+	branchRuntime  = "$[ replace(replace(coalesce(variables['System.PullRequest.SourceBranch'], variables['Build.SourceBranch']), 'refs/heads/', ''), 'refs/tags/', '') ]"
 	sourcesDirRoot = "$(Build.SourcesDirectory)"
 )
 

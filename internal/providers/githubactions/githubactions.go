@@ -249,6 +249,16 @@ func (pr *Provider) Validate(p *pipeline.Pipeline) diagnostics.List {
 					add(diagnostics.Errorf(s.Path()+".uses", "%q is not a GitHub action reference", s.Uses).
 						WithHint("use owner/repo@ref, owner/repo/path@ref, ./path, or docker://image"))
 				}
+				if name, _ := s.With.Get("name"); publishes && strings.HasPrefix(strings.ToLower(s.Uses), "actions/upload-artifact@") &&
+					strings.HasPrefix(name, testResultsPrefix) {
+					add(diagnostics.Errorf(pipeline.JoinKey(s.Path()+".with", "name"), "artifact names starting with %q are reserved for test results on GitHub Actions", testResultsPrefix).
+						WithHint("rename the artifact; GitHub requires artifact names to be unique in a workflow run"))
+				}
+			case pipeline.StepRun:
+				if j.OS() == pipeline.OSWindows && s.ShellFor(j.OS()) == pipeline.ShellSh {
+					add(diagnostics.Errorf(s.Path()+".shell", "GitHub Actions supports shell: sh only on Linux and macOS runners").
+						WithHint("use bash or pwsh on Windows"))
+				}
 			case pipeline.StepCache:
 				if len(s.Cache.Files) == 0 {
 					add(diagnostics.Warningf(s.Path()+".cache", "GitHub caches are immutable, so a cache key without files is saved once and never refreshed").

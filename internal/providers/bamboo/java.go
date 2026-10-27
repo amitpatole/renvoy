@@ -528,8 +528,10 @@ func planSpec(pl *plan, pkg, server, repo string) (string, []classSize) {
 	if len(triggers) > 0 {
 		ms = append(ms, method("triggers", triggers...))
 	}
-	if pl.BranchCreate != "" {
-		w.use("com.atlassian.bamboo.specs.api.builders.plan.branches.PlanBranchManagement")
+	w.use("com.atlassian.bamboo.specs.api.builders.plan.branches.PlanBranchManagement")
+	if pl.BranchCreate == "" {
+		ms = append(ms, method("planBranchManagement", code{"new PlanBranchManagement().createManually()"}))
+	} else {
 		create := code{".createForPullRequest()"}
 		switch {
 		case pl.BranchCreate == "for-new-branch" && pl.BranchRegex == allBranches:

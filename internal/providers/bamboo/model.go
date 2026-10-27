@@ -242,6 +242,16 @@ func validate(p *pipeline.Pipeline, prov providers.Provider, java bool) diagnost
 				WithHint("push to all branches, limit push to the plan's branch, or drop the pull request trigger"))
 		}
 	}
+	// Bamboo polls the plan repository, so the plan's own branch builds on
+	// every push whatever the triggers say.
+	switch {
+	case t.PullRequest != nil && t.Push == nil:
+		add(diagnostics.Warningf("triggers.pullRequest",
+			"Bamboo also builds every push to the branch its plan repository uses; only GitHub, GitLab, and Azure build pull requests alone"))
+	case t.Push != nil && branchPattern(t.Push.Branches) != "" && branchPattern(t.Push.Branches) != allBranches:
+		add(diagnostics.Warningf("triggers.push.branches",
+			"Bamboo also builds every push to the branch its plan repository uses, even when the branch filter does not match it"))
+	}
 	if t.Push != nil && len(t.Push.Branches) == 1 && branchPattern(t.Push.Branches) == "" {
 		add(diagnostics.Infof("triggers.push.branches",
 			"Bamboo builds the branch its plan repository uses; make sure that is %q", t.Push.Branches[0]))

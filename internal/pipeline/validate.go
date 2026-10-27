@@ -374,6 +374,10 @@ func ValidateCron(expr string) error {
 	if len(expr) > 256 {
 		return fmt.Errorf("cron expression is %d characters; at most 256 are allowed", len(expr))
 	}
+	// Providers read tabs, newlines, and Unicode spaces differently or not at all.
+	if strings.ContainsFunc(expr, func(r rune) bool { return r != ' ' && (unicode.IsSpace(r) || unicode.Is(unicode.Zs, r)) }) {
+		return fmt.Errorf("cron expression %q must separate its fields with spaces", expr)
+	}
 	fields := strings.Fields(expr)
 	if len(fields) != 5 {
 		return fmt.Errorf("cron expression %q must have exactly five fields", expr)
