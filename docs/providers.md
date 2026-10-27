@@ -375,7 +375,9 @@ GitLab `artifacts:when: always`, Azure `succeededOrFailed()`, Jenkins
 - **Azure macros in scripts.** Azure replaces `$(name)` in a script with the
   variable `name` before the shell runs. A run script whose `$(name)` matches a
   variable, secret, job `env` name, or matrix axis is an error; other `$(...)`
-  command substitutions are left to the shell.
+  command substitutions are left to the shell. Build arg values may not contain
+  provider expression syntax at all (`${{ }}`, `$[ ]`, `$( )`, `${bamboo.x}`),
+  since they are rendered into the generated docker command.
 - **Variables that `${git.*}` reads.** Scripts read the commit and branch from
   `GITHUB_SHA` (GitHub), `CI_COMMIT_SHA` and `CI_COMMIT_REF_NAME` (GitLab),
   `BUILD_SOURCEVERSION` (Azure), `GIT_COMMIT` (Jenkins), and

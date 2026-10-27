@@ -283,6 +283,10 @@ All notable changes to this project are documented here. The format follows
   the macro before the shell runs, so `$(date)` meant as command substitution
   could become a variable's or secret's value. Bamboo warns on
   `${bamboo.name}` in the plan description and requirements.
+- Build arg values with provider expression syntax (`${{ }}`, `$[ ]`, `$( )`,
+  `${bamboo.x}`) are an error: they are rendered into the docker command, where
+  GitHub, Azure, and Bamboo substitute them before the shell runs, so a secret
+  could reach the image although `${secrets.X}` is not allowed there.
 - Explicit empty trigger lists (`branches: []`, `tags: []`) are an error instead
   of matching everything. A Bamboo `javaPackage` segment that is a Windows
   device name (`con`, `nul`) is an error. The starter includes the Bamboo

@@ -816,3 +816,12 @@ func TestRound30PwshAndSchedules(t *testing.T) {
 	_, diags := parse(t, strings.Replace(minimal, "push: {}", "push: {}\n  schedules: []", 1))
 	expectError(t, diags, "triggers.schedules", "list is empty")
 }
+
+func TestRound32BuildArgProviderSyntax(t *testing.T) {
+	for _, val := range []string{"${{ secrets.X }}", "$(TOK)", "$[variables.x]", "$${bamboo.deploy.password}"} {
+		src := strings.Replace(minimal, "          - run: make test\n",
+			"          - buildImage:\n              image: app:1\n              buildArgs: {A: "+strconv.Quote(val)+"}\n", 1)
+		_, diags := parse(t, src)
+		expectError(t, diags, "stages[0].jobs[0].steps[0].buildImage.buildArgs.A", "provider expression syntax")
+	}
+}

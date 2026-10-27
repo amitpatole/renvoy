@@ -1139,6 +1139,14 @@ func (v *validator) checkStep(path string, s *Step, j *Job, axes map[string]bool
 			// Docker applies predefined args such as HTTP_PROXY to every RUN, and
 			// declared args become environment variables, so the env rules apply.
 			v.checkControlEnv(ap, a.Name, a.Value)
+			// Build args are rendered into the docker command, where GitHub, Azure,
+			// and Bamboo substitute their own syntax before the shell runs, so a
+			// secret could reach the image unseen.
+			if lit := literalText(a.Value); strings.Contains(lit, "${{") || strings.Contains(lit, "$[") ||
+				strings.Contains(lit, "$(") || providerVarRe.MatchString(lit) {
+				v.errorf(ap, "build arg values cannot contain provider expression syntax (${{, $[, $( or ${bamboo.}), which some providers substitute into the docker command").
+					Hint = "use ${variables.NAME}, ${git.sha}, or ${matrix.NAME}"
+			}
 		}
 	case StepPushImage:
 		v.checkImage(path+".pushImage.image", s.PushImage.Image, axes, j.Matrix)
