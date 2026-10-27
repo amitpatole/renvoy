@@ -1,5 +1,7 @@
 # Renvoy
 
+![Renvoy: one renvoy.yaml, native pipelines for GitHub Actions, GitLab CI, Azure DevOps, Jenkins, and Bamboo](brand/og-renvoy.png)
+
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.23695857.svg)](https://doi.org/10.5281/zenodo.23695857)
 
 Renvoy compiles one provider-neutral CI/CD definition into native pipeline files
@@ -192,6 +194,9 @@ renvoy version                     print the version
 
 ## Documentation
 
+The documentation site is at <https://amitpatole.github.io/renvoy/>.
+
+- [Why Renvoy](docs/why-renvoy.md): the problem it solves, who gains what, and when not to use it
 - [Configuration reference](docs/specification.md)
 - [Providers and capability matrix](docs/providers.md)
 - [Architecture](docs/architecture.md) and [ADR 0001](docs/adr/0001-provider-neutral-ir.md)

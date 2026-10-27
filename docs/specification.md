@@ -29,7 +29,7 @@ stages:
 ```
 
 Editors can use the JSON Schema in
-[`schemas/renvoy.v1alpha1.schema.json`](../schemas/renvoy.v1alpha1.schema.json).
+[`schemas/renvoy.v1alpha1.schema.json`](https://github.com/amitpatole/renvoy/blob/main/schemas/renvoy.v1alpha1.schema.json).
 `renvoy validate` is the authoritative check: it also enforces references, the
 dependency graph, and naming rules that a schema cannot express.
 

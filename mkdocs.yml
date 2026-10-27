@@ -1,0 +1,62 @@
+site_name: Renvoy
+site_description: >-
+  One provider-neutral CI/CD definition, compiled into native pipelines for
+  GitHub Actions, GitLab CI, Azure DevOps, Jenkins, and Bamboo.
+site_url: https://amitpatole.github.io/renvoy/
+repo_url: https://github.com/amitpatole/renvoy
+repo_name: amitpatole/renvoy
+copyright: Apache-2.0 © Amit Patole
+docs_dir: docs
+edit_uri: ""
+# Never build the local-only residuals ledger into the site.
+exclude_docs: |
+  SECURITY_RESIDUALS.md
+
+theme:
+  name: material
+  palette:
+    scheme: default          # Warm Paper: light, editorial
+  font:
+    text: Inter
+    code: JetBrains Mono
+  icon:
+    repo: fontawesome/brands/github
+  features:
+    - navigation.sections
+    - navigation.top
+    - navigation.tracking
+    - navigation.instant
+    - navigation.footer
+    - content.code.copy
+    - toc.follow
+    - search.suggest
+    - search.highlight
+
+extra_css:
+  - stylesheets/extra.css
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.superfences
+
+plugins:
+  - search
+
+nav:
+  - Home: index.md
+  - Why Renvoy: why-renvoy.md
+  - Configuration reference: specification.md
+  - Providers: providers.md
+  - Architecture:
+      - Overview: architecture.md
+      - "ADR 0001: Provider-neutral IR": adr/0001-provider-neutral-ir.md
+  - Plugins (proposed): plugins.md
+  - Implementation notes: implementation-notes.md

@@ -10,6 +10,9 @@ All notable changes to this project are documented here. The format follows
 
 - The Zenodo concept DOI (10.5281/zenodo.23695857) in the README and
   `CITATION.cff`.
+- A documentation site at https://amitpatole.github.io/renvoy/ (MkDocs Material,
+  deployed to GitHub Pages), a "Why Renvoy" page on the use cases and when not
+  to use it, and Warm Paper branding with an olive accent and a social card.
 
 ## [0.1.0] - 2026-10-27
 

@@ -10,3 +10,4 @@ docs/SECURITY_RESIDUALS.md
 
 # Local Claude Code settings.
 .claude/settings.local.json
+/site/

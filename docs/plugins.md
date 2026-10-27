@@ -1,6 +1,6 @@
 # External provider plugins (proposed)
 
-> Status: design only. The message types exist in [`pkg/plugin`](../pkg/plugin)
+> Status: design only. The message types exist in [`pkg/plugin`](https://github.com/amitpatole/renvoy/tree/main/pkg/plugin)
 > and are experimental while the configuration API is `renvoy.dev/v1alpha1`.
 > Renvoy does not load plugins yet.
 
