@@ -237,7 +237,8 @@ GitLab's bash runners already behave this way. PowerShell steps start with
 `$ErrorActionPreference = 'Stop'` and `$PSNativeCommandUseErrorActionPreference
 = $true`, so a failing cmdlet or native command (`docker build`) stops the script
 on PowerShell 7.4 and later; older PowerShell, including the Windows PowerShell
-5.1 that Bamboo's PowerShell tasks run, ignores the second line and only
+5.1 that Bamboo's PowerShell tasks run and that GitLab's docker-windows and
+kubernetes executors use unless the runner sets `shell: pwsh`, ignores the second line and only
 the last command's exit code fails the step.
 
 **References never become script text.** `${secrets.X}`, `${git.branch}`, and

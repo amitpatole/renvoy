@@ -175,6 +175,12 @@ func decode(p *pipeline.Pipeline, provider string) (extension, diagnostics.List)
 		if !ok {
 			diags = append(diags, diagnostics.Errorf(path+".javaPackage", "invalid Java package %q", ext.JavaPackage))
 		}
+		for _, part := range strings.Split(ext.JavaPackage, ".") {
+			if pipeline.IsWindowsDevice(part) {
+				diags = append(diags, diagnostics.Errorf(path+".javaPackage", "Java package %q contains %q, a reserved Windows device name, so its directory cannot be checked out on Windows", ext.JavaPackage, part))
+				break
+			}
+		}
 		for _, ns := range jdkPackages {
 			if ext.JavaPackage == ns || strings.HasPrefix(ext.JavaPackage, ns+".") {
 				diags = append(diags, diagnostics.Errorf(path+".javaPackage", "Java package %q is in the JDK's %s namespace, which application code cannot use", ext.JavaPackage, ns).

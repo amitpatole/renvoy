@@ -68,4 +68,11 @@ stages:
           - deployKubernetes:
               manifests: k8s/
               namespace: staging
+
+# Provider settings. Bamboo needs the keys of an existing project and of the
+# plan to create; replace these with your own.
+extensions:
+  bamboo:
+    projectKey: PROJ
+    planKey: SERVICE
 `

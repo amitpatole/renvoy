@@ -714,3 +714,43 @@ func TestRound27EnvCaseAcrossLevels(t *testing.T) {
 		t.Errorf("no warning:\n%s", render(diags))
 	}
 }
+
+func TestRound28PwshTokenizer(t *testing.T) {
+	for _, run := range []string{
+		"# note <#\nusing namespace System\n# #>\necho hi",
+		"#<#\nparam($x)\n#>",
+		"param\n($x)\necho hi",
+		"param # c\n($x)",
+		";param($x)",
+		"<# a\n#> <# b #>\n[CmdletBinding()]\nparam()",
+	} {
+		src := strings.Replace(minimal, "          - run: make test\n", "          - shell: pwsh\n            run: "+strconv.Quote(run)+"\n", 1)
+		_, diags := parse(t, src)
+		expectError(t, diags, "stages[0].jobs[0].steps[0].run", "must come first")
+	}
+	for _, run := range []string{
+		"$s = @'\nusing namespace System\n'@\necho $s",
+		"echo 'using namespace x'",
+		"echo \"a`\"b\"\necho ok",
+		"function f {\n  param($x)\n  $x\n}\nf 1",
+	} {
+		src := strings.Replace(minimal, "          - run: make test\n", "          - shell: pwsh\n            run: "+strconv.Quote(run)+"\n", 1)
+		_, diags := parse(t, src)
+		for _, d := range diags {
+			if strings.Contains(d.Message, "must come first") {
+				t.Errorf("%q rejected: %s", run, d.Message)
+			}
+		}
+	}
+}
+
+func TestRound28EmptyTriggerLists(t *testing.T) {
+	for _, c := range []struct{ trigger, path string }{
+		{"push: {branches: []}", "triggers.push.branches"},
+		{"push: {tags: []}", "triggers.push.tags"},
+		{"pullRequest: {branches: []}", "triggers.pullRequest.branches"},
+	} {
+		_, diags := parse(t, strings.Replace(minimal, "push: {}", c.trigger, 1))
+		expectError(t, diags, c.path, "list is empty")
+	}
+}

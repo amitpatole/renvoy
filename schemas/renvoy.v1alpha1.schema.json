@@ -46,7 +46,7 @@
       "properties": {
         "name": { "$ref": "#/$defs/name" },
         "description": { "type": "string" },
-        "labels": { "type": "object", "additionalProperties": { "type": "string" } }
+        "labels": { "type": "object", "additionalProperties": { "type": ["string", "number", "boolean"] } }
       }
     },
     "triggers": {
@@ -127,7 +127,7 @@
           "additionalProperties": {
             "type": "array",
             "minItems": 1,
-            "items": { "type": ["string", "number"] }
+            "items": { "type": ["string", "number", "boolean"] }
           }
         },
         "steps": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/step" } },

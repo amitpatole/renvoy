@@ -834,3 +834,10 @@ func TestRound27GitLabSecretNames(t *testing.T) {
 		}
 	}
 }
+
+func TestRound28JavaPackageDeviceNames(t *testing.T) {
+	src := strings.Replace(round14Base, "bamboo: {projectKey: PROJ, planKey: PLAN}", "bamboo: {projectKey: PROJ, planKey: PLAN, javaPackage: com.acme.Con.x}", 1)
+	if d := round14(t, "bamboo-java", src); !hasDiag(d, diagnostics.Error, "extensions.bamboo.javaPackage", "reserved Windows device name") {
+		t.Errorf("javaPackage device name: %v", d)
+	}
+}

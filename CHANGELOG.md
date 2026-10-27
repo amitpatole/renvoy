@@ -261,3 +261,13 @@ All notable changes to this project are documented here. The format follows
   spaces, and a byte order mark. Artifact names that differ only by case are an
   error. GitLab secrets are checked against the variables its rules and clone
   settings read, as variables already were.
+- The PowerShell first-statement check reads comments, strings, and
+  here-strings like PowerShell does, so `<#` inside a line comment or string no
+  longer hides a `using` statement, `param` followed by a line break is found,
+  and `using` text inside a here-string is no longer rejected.
+- Explicit empty trigger lists (`branches: []`, `tags: []`) are an error instead
+  of matching everything. A Bamboo `javaPackage` segment that is a Windows
+  device name (`con`, `nul`) is an error. The starter includes the Bamboo
+  project and plan keys, so `renvoy generate --all` works on it as printed by
+  `renvoy init`. The JSON Schema accepts boolean label and matrix values, as
+  the parser does.

@@ -14,7 +14,7 @@ where the implementation differs from or extends it.
 
 ## Design decisions not fixed by the specification
 
-- **Names are kebab-case** (`^[a-z][a-z0-9-]*$`, at most 63 characters). They map
+- **Names are kebab-case** (`^[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?$`: at most 63 characters, no trailing hyphen). They map
   onto every provider's identifiers (Azure replaces `-` with `_`, Bamboo keys
   upper-case and strip `-`) and are safe in file names, which prevents path
   traversal through `metadata.name`.

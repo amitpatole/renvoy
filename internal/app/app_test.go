@@ -66,13 +66,9 @@ func TestInitRefusesSymlink(t *testing.T) {
 	expectCode(t, run(t, dir, "init", "--force"), app.ExitUnsafeOverwrite)
 }
 
-// bambooKeys are the only settings the starter lacks for Bamboo, which cannot
-// invent project and plan keys.
-const bambooKeys = "\nextensions:\n  bamboo:\n    projectKey: PROJ\n    planKey: SERVICE\n"
-
 func TestStarterWorksForEveryProvider(t *testing.T) {
 	dir := t.TempDir()
-	writeFile(t, filepath.Join(dir, "renvoy.yaml"), app.Starter+bambooKeys)
+	writeFile(t, filepath.Join(dir, "renvoy.yaml"), app.Starter)
 	r := run(t, dir, "validate")
 	expectCode(t, r, app.ExitOK)
 	if !strings.Contains(r.stderr, "renvoy.yaml is valid") {
@@ -327,7 +323,7 @@ func TestStepNamesMentioningMarkersAreFine(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, filepath.Join(dir, "renvoy.yaml"), strings.Replace(app.Starter,
 		"          - run: pip install -r requirements.txt\n",
-		"          - name: \"Renvoy: end-to-end tests\"\n            run: |\n              # renvoy: begin\n              pip install -r requirements.txt\n", 1)+bambooKeys)
+		"          - name: \"Renvoy: end-to-end tests\"\n            run: |\n              # renvoy: begin\n              pip install -r requirements.txt\n", 1))
 	for i := 0; i < 2; i++ {
 		r := run(t, dir, "generate", "--all")
 		expectCode(t, r, app.ExitOK)
@@ -339,7 +335,7 @@ func TestStepNamesMentioningMarkersAreFine(t *testing.T) {
 func TestMarkerLikeTextNeverBlocksRegeneration(t *testing.T) {
 	dir := t.TempDir()
 	starter := strings.Replace(app.Starter, "          - run: pip install -r requirements.txt\n",
-		"          - run: |\n              # renvoy end-to-end smoke\n              pip install -r requirements.txt\n", 1) + bambooKeys
+		"          - run: |\n              # renvoy end-to-end smoke\n              pip install -r requirements.txt\n", 1)
 	writeFile(t, filepath.Join(dir, "renvoy.yaml"), starter)
 	expectCode(t, run(t, dir, "generate", "--all"), app.ExitOK)
 	writeFile(t, filepath.Join(dir, "renvoy.yaml"), strings.Replace(starter, "# renvoy end-to-end smoke", "# smoke test", 1))
@@ -365,7 +361,7 @@ func TestForcePrintsBackup(t *testing.T) {
 // is written, keeping the validate-before-write promise.
 func TestForceWritesNothingWhenABackupPathIsUnsafe(t *testing.T) {
 	dir := t.TempDir()
-	writeFile(t, filepath.Join(dir, "renvoy.yaml"), app.Starter+bambooKeys)
+	writeFile(t, filepath.Join(dir, "renvoy.yaml"), app.Starter)
 	writeFile(t, filepath.Join(dir, ".gitlab-ci.yml"), "hand: gitlab\n")
 	writeFile(t, filepath.Join(dir, "Jenkinsfile"), "hand: jenkins\n")
 	if err := os.Symlink(filepath.Join(t.TempDir(), "victim"), filepath.Join(dir, "Jenkinsfile.renvoy-backup")); err != nil {

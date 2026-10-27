@@ -267,6 +267,12 @@ func (v *validator) checkBudgets() {
 
 var windowsDeviceRe = regexp.MustCompile(`^(con|prn|aux|nul|com[0-9]|lpt[0-9])$`)
 
+// IsWindowsDevice reports whether name, ignoring case, is a reserved Windows
+// device name, which cannot be used as a file or directory name on Windows.
+func IsWindowsDevice(name string) bool {
+	return windowsDeviceRe.MatchString(strings.ToLower(name))
+}
+
 func (v *validator) checkName(path, name, what string) bool {
 	if name == "" {
 		v.errorf(path, "%s name is required", what)
@@ -301,11 +307,21 @@ func (v *validator) checkTriggers() {
 		v.errorf("triggers", "at least one trigger is required").
 			Hint = "add triggers.push, triggers.pullRequest, triggers.manual, or triggers.schedules"
 	}
+	// An explicit empty list would otherwise mean "every branch", like an
+	// omitted one, so a forgotten value is reported instead.
+	emptyList := func(path string, list []string) {
+		if list != nil && len(list) == 0 {
+			v.errorf(path, "list is empty").Hint = "list at least one pattern, or remove the key to match everything"
+		}
+	}
 	if t.Push != nil {
+		emptyList("triggers.push.branches", t.Push.Branches)
+		emptyList("triggers.push.tags", t.Push.Tags)
 		v.checkPatterns("triggers.push.branches", t.Push.Branches)
 		v.checkPatterns("triggers.push.tags", t.Push.Tags)
 	}
 	if t.PullRequest != nil {
+		emptyList("triggers.pullRequest.branches", t.PullRequest.Branches)
 		v.checkPatterns("triggers.pullRequest.branches", t.PullRequest.Branches)
 	}
 	if len(t.Schedules) > MaxSchedules {
@@ -1198,33 +1214,118 @@ func (v *validator) checkExpandedImage(path, image string, m Matrix) {
 var (
 	// pwshBreaks are the characters PowerShell reads as line breaks.
 	pwshBreaks = strings.NewReplacer("\r\n", "\n", "\r", "\n", "\u0085", "\n", "\u2028", "\n", "\u2029", "\n")
-	// pwshBlockComment matches <# ... #> comments, including help blocks.
-	pwshBlockComment = regexp.MustCompile(`(?s)<#.*?#>`)
 	// pwshAttribute matches a script attribute such as [CmdletBinding()] or [OutputType([int])].
-	pwshAttribute = regexp.MustCompile(`^\[\s*[A-Za-z][\w.]*\s*\(`)
+	pwshAttribute = regexp.MustCompile(`^\[ *[a-z][\w.]* *\(`)
 )
 
+// pwshSpace reports whether PowerShell reads r as whitespace.
+func pwshSpace(r rune) bool {
+	return unicode.IsSpace(r) || unicode.Is(unicode.Zs, r) || r == '\ufeff'
+}
+
+// pwshCode returns script with comments replaced by a space and string
+// literals (including here-strings) replaced by an empty string literal, so
+// that only code is left.
+// Quotes include the typographic quotes PowerShell also accepts.
+func pwshCode(script string) string {
+	rs := []rune(pwshBreaks.Replace(script))
+	var b strings.Builder
+	single := func(r rune) bool {
+		return r == '\'' || r == '\u2018' || r == '\u2019' || r == '\u201a' || r == '\u201b'
+	}
+	double := func(r rune) bool { return r == '"' || r == '\u201c' || r == '\u201d' || r == '\u201e' }
+	// atLineStart reports whether rs[i] starts a line, ignoring leading space.
+	atLineStart := func(i int) bool {
+		for i--; i >= 0 && rs[i] != '\n'; i-- {
+			if !pwshSpace(rs[i]) {
+				return false
+			}
+		}
+		return true
+	}
+	for i := 0; i < len(rs); i++ {
+		r := rs[i]
+		switch {
+		case r == '<' && i+1 < len(rs) && rs[i+1] == '#':
+			for i += 2; i < len(rs) && (rs[i] != '#' || i+1 >= len(rs) || rs[i+1] != '>'); i++ {
+			}
+			i++
+			b.WriteByte(' ')
+		case r == '#':
+			for i < len(rs) && rs[i] != '\n' {
+				i++
+			}
+			b.WriteString(" \n")
+		case r == '@' && i+1 < len(rs) && (single(rs[i+1]) || double(rs[i+1])):
+			// A here-string opens with @' or @" at the end of a line and
+			// closes with '@ or "@ at the start of a line.
+			j := i + 2
+			for j < len(rs) && rs[j] != '\n' && pwshSpace(rs[j]) {
+				j++
+			}
+			if j < len(rs) && rs[j] != '\n' {
+				b.WriteRune(r)
+				continue
+			}
+			for i = j; i < len(rs); i++ {
+				if (single(rs[i]) || double(rs[i])) && i+1 < len(rs) && rs[i+1] == '@' && atLineStart(i) {
+					i++
+					break
+				}
+			}
+			b.WriteString("''")
+		case single(r):
+			for i++; i < len(rs); i++ {
+				if single(rs[i]) {
+					if i+1 < len(rs) && single(rs[i+1]) {
+						i++
+						continue
+					}
+					break
+				}
+			}
+			b.WriteString("''")
+		case double(r):
+			for i++; i < len(rs); i++ {
+				if rs[i] == '`' {
+					i++
+					continue
+				}
+				if double(rs[i]) {
+					if i+1 < len(rs) && double(rs[i+1]) {
+						i++
+						continue
+					}
+					break
+				}
+			}
+			b.WriteString("''")
+		case pwshSpace(r) && r != '\n':
+			b.WriteByte(' ')
+		default:
+			b.WriteRune(unicode.ToLower(r))
+		}
+	}
+	return b.String()
+}
+
 // pwshLeadingStatement returns a PowerShell statement in a script that must be
-// the first statement of a script, or "". using is found on any line, param
-// and script attributes only as the first statement after comments.
+// the first statement of a script, or "": using statements anywhere, and a
+// param block or script attribute as the first statement.
 func pwshLeadingStatement(script string) string {
-	script = pwshBlockComment.ReplaceAllString(pwshBreaks.Replace(script), " ")
-	space := func(r rune) bool { return unicode.IsSpace(r) || unicode.Is(unicode.Zs, r) || r == '\ufeff' }
-	first := ""
-	for _, line := range strings.Split(script, "\n") {
-		line = strings.ToLower(strings.TrimFunc(line, space))
-		if f := strings.FieldsFunc(line, space); len(f) > 1 && f[0] == "using" {
+	code := pwshCode(script)
+	for _, stmt := range strings.FieldsFunc(code, func(r rune) bool { return r == '\n' || r == ';' }) {
+		if f := strings.Fields(stmt); len(f) > 1 && f[0] == "using" {
 			switch f[1] {
 			case "namespace", "module", "assembly":
 				return "using"
 			}
 		}
-		if first == "" && line != "" && !strings.HasPrefix(line, "#") {
-			first = line
-		}
 	}
+	first := strings.TrimLeftFunc(code, func(r rune) bool { return r == ' ' || r == '\n' || r == ';' })
 	switch {
-	case strings.HasPrefix(first, "param") && strings.HasPrefix(strings.TrimFunc(first[len("param"):], space), "("):
+	case strings.HasPrefix(first, "param") &&
+		strings.HasPrefix(strings.TrimLeft(first[len("param"):], " \n"), "("):
 		return "param()"
 	case pwshAttribute.MatchString(first):
 		return "a script attribute such as [CmdletBinding()]"

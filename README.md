@@ -77,14 +77,14 @@ error [azure-devops] renvoy.yaml:31:9 stages[0].jobs[0].retries:
 no files were written
 ```
 
-Hand edits are protected. Here the generated workflow was edited to use
-`ubuntu-24.04`:
+Hand edits are protected. Here the first `runs-on` line of the generated
+workflow was edited to use `ubuntu-24.04`:
 
 ```console
 $ renvoy generate -p github-actions
 error .github/workflows/my-service.yml:
   refusing to overwrite: the file was edited outside its custom block
-  hint: review with `renvoy diff`, move hand-written content into a custom block, or pass --force to replace it
+  hint: review with `renvoy diff`, move hand-written content into a custom block, or pass --force to replace it (the current file is saved as a .renvoy-backup)
 
 no files were written
 $ renvoy diff -p github-actions
