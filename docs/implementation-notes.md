@@ -8,7 +8,7 @@ where the implementation differs from or extends it.
 | Topic | Specification | Implementation | Why |
 | --- | --- | --- | --- |
 | YAML library | `gopkg.in/yaml.v3` | `go.yaml.in/yaml/v3` | The `go-yaml/yaml` repository is archived. `go.yaml.in/yaml/v3` is the YAML organization's maintained continuation with the same API and node positions. |
-| Release automation | Optional `.goreleaser.yaml` | A documented release plan in [CONTRIBUTING](../CONTRIBUTING.md#releasing) | No release is published yet; a config that cannot be exercised end to end would not be "complete and useful". |
+| Release automation | Optional `.goreleaser.yaml` | A plain [release workflow](../.github/workflows/release.yml) ([CONTRIBUTING](../CONTRIBUTING.md#releasing)) | Cross-compiling one `main` package needs only `go build`, so a third-party release tool would add a dependency to the most privileged job without adding function. |
 | Providers | Four initial targets | Also `bamboo` (YAML Specs) and `bamboo-java` (Java Specs) | Requested during implementation. Bamboo was already a listed future target. |
 | `downloadArtifact.path` | Not specified | Not supported | GitLab and Jenkins cannot restore artifacts to a different directory, so a destination would be lossy. Artifacts restore at their original paths. |
 

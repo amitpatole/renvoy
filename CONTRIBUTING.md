@@ -89,16 +89,23 @@ change.
 
 ## Releasing
 
-Releases are not published yet. The plan:
-
-1. Update `CHANGELOG.md`, moving entries from "Unreleased" to the new version.
-2. Tag `vX.Y.Z` on a green `main`.
-3. A release workflow builds `renvoy` for linux, darwin, and windows on amd64 and
-   arm64 with `-trimpath` and `-ldflags "-X github.com/amitpatole/renvoy/internal/app.Version=vX.Y.Z"`,
-   writes SHA-256 checksums, and attaches both to a GitHub release using the
-   workflow's `GITHUB_TOKEN`. No other credentials are needed.
-4. `go install github.com/amitpatole/renvoy/cmd/renvoy@vX.Y.Z` works as soon as the
+1. Move the entries under "Unreleased" in `CHANGELOG.md` to a new
+   `## [X.Y.Z] - YYYY-MM-DD` heading, and set the same version and date in
+   `CITATION.cff` and `.zenodo.json` (including the `pkg.go.dev` link).
+   `TestReleaseMetadataInSync` fails until all three agree.
+2. Tag `vX.Y.Z` on a green `main` and push the tag.
+3. The [release workflow](.github/workflows/release.yml) runs the tests, builds
+   `renvoy` for linux, darwin, and windows on amd64 and arm64 with `-trimpath` and
+   `-ldflags "-X github.com/amitpatole/renvoy/internal/app.Version=vX.Y.Z"`, writes
+   SHA-256 checksums, signs them with Sigstore keyless signing, records build
+   provenance, and publishes a GitHub release with the CHANGELOG section as notes.
+   It uses only the workflow's own `GITHUB_TOKEN` and OIDC identity; no stored
+   credentials are needed.
+4. The GitHub release triggers Zenodo, which archives it and mints a version DOI.
+5. `go install github.com/amitpatole/renvoy/cmd/renvoy@vX.Y.Z` works as soon as the
    tag is pushed.
+
+Workflow actions are pinned to commit SHAs; Dependabot proposes updates.
 
 ## Code of conduct
 

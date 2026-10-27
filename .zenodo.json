@@ -1,0 +1,37 @@
+{
+  "title": "Renvoy: one CI/CD definition, native pipelines for every provider",
+  "upload_type": "software",
+  "description": "Renvoy compiles one provider-neutral CI/CD definition (renvoy.yaml) into native pipeline files for GitHub Actions, GitLab CI, Azure DevOps Pipelines, Jenkins Declarative Pipeline, and Atlassian Bamboo (YAML and Java Specs). Each provider declares a capability matrix, so anything a provider cannot express is reported as a located error instead of being dropped, and generated files carry checksums so hand edits are never silently overwritten. Apache-2.0; see https://github.com/amitpatole/renvoy",
+  "license": "Apache-2.0",
+  "access_right": "open",
+  "version": "0.1.0",
+  "creators": [
+    {
+      "name": "Patole, Amit",
+      "orcid": "0009-0009-6514-0913"
+    }
+  ],
+  "keywords": [
+    "continuous integration",
+    "continuous delivery",
+    "CI/CD",
+    "pipeline compiler",
+    "GitHub Actions",
+    "GitLab CI",
+    "Azure DevOps",
+    "Jenkins",
+    "Bamboo"
+  ],
+  "related_identifiers": [
+    {
+      "identifier": "https://github.com/amitpatole/renvoy",
+      "relation": "isSupplementTo",
+      "resource_type": "software"
+    },
+    {
+      "identifier": "https://pkg.go.dev/github.com/amitpatole/renvoy@v0.1.0",
+      "relation": "isIdenticalTo",
+      "resource_type": "software"
+    }
+  ]
+}

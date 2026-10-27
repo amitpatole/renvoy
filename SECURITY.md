@@ -16,6 +16,34 @@ release notes unless you ask otherwise.
 Renvoy is pre-release. Until `v1.0.0`, only the latest release (or `main` before
 the first release) receives security fixes.
 
+## Verifying a release
+
+Release binaries are built by the
+[release workflow](.github/workflows/release.yml) from the tagged commit. Nobody
+holds a long-lived signing key: the workflow signs `checksums.txt` with Sigstore
+keyless signing and records build provenance, both bound to this repository's
+workflow identity and logged in Sigstore's public transparency log.
+
+To check a download (replace the version and archive name):
+
+```bash
+# 1. The checksum file was signed by this repository's release workflow for this tag.
+cosign verify-blob checksums.txt \
+  --bundle checksums.txt.sigstore.json \
+  --certificate-identity "https://github.com/amitpatole/renvoy/.github/workflows/release.yml@refs/tags/v0.1.0" \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com
+
+# 2. The archive matches the signed checksum.
+sha256sum --ignore-missing -c checksums.txt
+
+# 3. GitHub build provenance for the archive (optional, needs the gh CLI).
+gh attestation verify renvoy_0.1.0_linux_amd64.tar.gz --repo amitpatole/renvoy
+```
+
+`go install` does not use these files. It downloads source through the Go module
+proxy and checks it against the public Go checksum database (sum.golang.org), so
+a tagged version cannot be changed after it is first recorded.
+
 ## Scope
 
 Renvoy reads a pipeline file and writes CI configuration. Reports we especially

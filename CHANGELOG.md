@@ -6,6 +6,10 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-10-27
+
+First public release.
+
 ### Added
 
 - The `renvoy.dev/v1alpha1` pipeline format: triggers (push, tags, pull requests,
@@ -27,6 +31,9 @@ All notable changes to this project are documented here. The format follows
   to overwrite edited files, and symlink-safe atomic writes.
 - A JSON Schema for editors, experimental plugin protocol types in `pkg/plugin`,
   examples, and documentation.
+- Release binaries for Linux, macOS, and Windows (amd64 and arm64) with
+  SHA-256 checksums, a Sigstore keyless signature, and GitHub build provenance;
+  `CITATION.cff` and Zenodo metadata for citing Renvoy.
 
 ### Security
 
@@ -293,3 +300,6 @@ All notable changes to this project are documented here. The format follows
   project and plan keys, so `renvoy generate --all` works on it as printed by
   `renvoy init`. The JSON Schema accepts boolean label and matrix values, as
   the parser does.
+
+[Unreleased]: https://github.com/amitpatole/renvoy/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/amitpatole/renvoy/releases/tag/v0.1.0

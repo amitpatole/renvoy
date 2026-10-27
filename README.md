@@ -22,11 +22,16 @@ overwrites files you edited by hand.
 
 ## Install
 
-Renvoy has not published a release yet. Install the latest commit with Go 1.27
-or newer:
+Download a prebuilt binary for Linux, macOS, or Windows (amd64 and arm64) from
+the [latest release](https://github.com/amitpatole/renvoy/releases/latest).
+Each release has SHA-256 checksums in `checksums.txt`, a Sigstore signature over
+them, and GitHub build provenance; [SECURITY.md](SECURITY.md#verifying-a-release)
+shows how to verify a download.
+
+With Go 1.27 or newer:
 
 ```bash
-go install github.com/amitpatole/renvoy/cmd/renvoy@latest
+go install github.com/amitpatole/renvoy/cmd/renvoy@v0.1.0
 ```
 
 or build it from source:
