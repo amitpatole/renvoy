@@ -514,3 +514,20 @@ func TestRound15PathsAndDigests(t *testing.T) {
 		}
 	}
 }
+
+// Round 16: paths passed to file matchers have no '.' or empty segments, which
+// Jenkins' Ant patterns match against nothing.
+func TestRound16PatternPaths(t *testing.T) {
+	for _, p := range []string{"./dist/", "./", ".", "dist/./x", "dist/.", "a//b"} {
+		src := strings.Replace(minimal, "          - run: make test\n", "          - uploadArtifact: {name: out, paths: [\""+p+"\"]}\n", 1)
+		_, diags := parse(t, src)
+		expectError(t, diags, "stages[0].jobs[0].steps[0].uploadArtifact.paths[0]", "'.' or empty segments")
+	}
+	src := strings.Replace(minimal, "          - run: make test\n", "          - publishTestResults: {path: \"./reports/*.xml\", format: junit}\n", 1)
+	_, diags := parse(t, src)
+	expectError(t, diags, "stages[0].jobs[0].steps[0].publishTestResults.path", "'.' or empty segments")
+	ok := strings.Replace(minimal, "          - run: make test\n", "          - buildImage: {image: app, context: .}\n          - uploadArtifact: {name: out, paths: [dist/, a.b/c]}\n", 1)
+	if _, diags := parse(t, ok); diags.HasErrors() {
+		t.Fatalf("rejected:\n%s", render(diags))
+	}
+}

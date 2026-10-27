@@ -827,8 +827,21 @@ func (v *validator) checkRelPath(path, s string, required bool) {
 }
 
 // checkLiteralPath validates a required relative path that must not contain wildcards.
-func (v *validator) checkLiteralPath(path, s string) {
+// checkPatternPath checks a path that providers pass to file matchers. Jenkins
+// matches with Ant patterns, where "./dist/**" or "." match no files.
+func (v *validator) checkPatternPath(path, s string) {
 	v.checkRelPath(path, s, true)
+	for _, part := range strings.Split(strings.TrimSuffix(s, "/"), "/") {
+		if part == "." || part == "" {
+			v.errorf(path, "path %q must not contain '.' or empty segments", s).
+				Hint = "write the path from the workspace root, such as dist/ instead of ./dist/"
+			return
+		}
+	}
+}
+
+func (v *validator) checkLiteralPath(path, s string) {
+	v.checkPatternPath(path, s)
 	if strings.ContainsAny(s, "*?[]{}") {
 		v.errorf(path, "path %q must not contain wildcards", s).
 			Hint = "list files or directories explicitly; end directories with /"
@@ -940,7 +953,7 @@ func (v *validator) checkStep(path string, s *Step, j *Job, axes map[string]bool
 			v.checkLiteralPath(JoinIndex(path+".cache.paths", i), p)
 		}
 		for i, f := range c.Files {
-			v.checkRelPath(JoinIndex(path+".cache.files", i), f, true)
+			v.checkPatternPath(JoinIndex(path+".cache.files", i), f)
 		}
 	case StepUploadArtifact:
 		a := s.UploadArtifact
@@ -965,7 +978,7 @@ func (v *validator) checkStep(path string, s *Step, j *Job, axes map[string]bool
 		}
 	case StepPublishTestResults:
 		t := s.PublishTestResults
-		v.checkRelPath(path+".publishTestResults.path", t.Path, true)
+		v.checkPatternPath(path+".publishTestResults.path", t.Path)
 		if t.Format != "" && t.Format != TestFormatJUnit {
 			v.errorf(path+".publishTestResults.format", "unsupported test format %q", t.Format).Hint = "use junit"
 		}

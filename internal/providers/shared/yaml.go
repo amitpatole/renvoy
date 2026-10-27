@@ -81,7 +81,7 @@ func Str(s string) *yaml.Node {
 // times, << and = as merge and value keys, and Psych reads :name as a symbol.
 var yaml11Patterns = []*regexp.Regexp{
 	regexp.MustCompile(`(?i)^(y|n|yes|no|on|off|true|false|null|~)$`),
-	regexp.MustCompile(`^[-+]?(\.[0-9]|[0-9_])[0-9_,:.]*([eE][-+]?[0-9]+)?$`),
+	regexp.MustCompile(`^[-+]?(\.[0-9_]|[0-9_])[0-9_,:.]*([eE][-+]?[0-9]+)?$`),
 	regexp.MustCompile(`^[-+]?0[xXoObB][0-9a-fA-F_,]*$`),
 	regexp.MustCompile(`^[-+]?\.(inf|Inf|INF|nan|NaN|NAN)$`),
 	regexp.MustCompile(`^-?[0-9]{4}-[0-9]{1,2}-[0-9]{1,2}([Tt \t]|$)`),

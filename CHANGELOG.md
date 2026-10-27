@@ -167,3 +167,7 @@ All notable changes to this project are documented here. The format follows
   which GitHub's artifact and cache actions read as exclusions, comments,
   escapes, or trim; negative-year timestamps are quoted in generated YAML; image
   digests must have their algorithm's exact length; IPv6 registry hosts work.
+- Artifact, cache, and test-result paths with `.` or empty segments (`./dist/`,
+  `.`) are rejected: Jenkins' Ant patterns (`./dist/**`) matched no files, so
+  archiveArtifacts failed and stash was empty. Values such as `._` and `._5`
+  are quoted in generated YAML; SnakeYAML failed on them or read numbers.

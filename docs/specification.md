@@ -69,6 +69,8 @@ dependency graph, and naming rules that a schema cannot express.
   Artifact and cache paths are literal (no wildcards); directories end with `/`.
   Paths must not start with `!` or `#`, contain `\`, or start or end with spaces,
   which GitHub's artifact and cache actions read as exclusions, comments, or escapes.
+  Artifact, cache, and test-result paths also have no `.` or empty segments
+  (`dist/`, not `./dist/`), because Jenkins' Ant patterns would match no files.
 - **Unknown fields are errors**, with the line, column, and a suggestion.
 
 ## Top level
