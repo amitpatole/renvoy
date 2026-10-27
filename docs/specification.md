@@ -58,7 +58,7 @@ dependency graph, and naming rules that a schema cannot express.
 - **Branch names in variables.** `${git.branch}` may only set environment variables
   and build arguments whose names describe the value, meaning they contain one of
   the words `BRANCH`, `REF`, `TAG`, `VERSION`, `NAME`, `LABEL`, `ENV`, `ENVIRONMENT`,
-  `CHANNEL`, `TARGET`, `URL`, or `SLUG` (for example `BRANCH_NAME`, `IMAGE_TAG`,
+  `CHANNEL`, `TARGET`, `URL`, or `SLUG` (for example `RELEASE_BRANCH`, `IMAGE_TAG`,
   `DEPLOY_ENV`), and do not select programs, configuration, directories, hosts,
   proxies, tool versions, or CI runner behavior (`GIT_*`, `CI_*`, `BUILD_*`,
   `PYENV_*`, `VIRTUAL_ENV`, `*_FILE(S)`, `*_DIR(S)`, `*_HOST`, `*_OPTS`, `*PATH`,

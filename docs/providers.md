@@ -330,6 +330,20 @@ GitLab `artifacts:when: always`, Azure `succeededOrFailed()`, Jenkins
 - **Jenkins branch conditions** add `not { buildingTag() }` and
   `not { changeRequest() }`, because Jenkins sets `BRANCH_NAME` for tag and pull
   request builds too (`PR-12`, `v1.0`).
+- **Variables that conditions read.** Jenkins `when` conditions read
+  `BRANCH_NAME`, `TAG_NAME`, and `CHANGE_*`, and GitLab rules read
+  `CI_COMMIT_BRANCH`, `CI_COMMIT_TAG`, `CI_PIPELINE_SOURCE`, and
+  `CI_MERGE_REQUEST_*`. A pipeline variable or job `env` entry with one of these
+  names would replace the value, so it is an error on that provider. GitLab
+  `GIT_STRATEGY` and `GIT_CHECKOUT` are set from checkout steps, and other
+  `GIT_*` names, which the runner reads as clone settings, are a warning.
+- **Hidden files in artifacts.** GitHub's upload action skips files starting
+  with `.` unless told otherwise, so Renvoy sets `include-hidden-files: true`;
+  Jenkins turns off Ant's default excludes (`.gitignore`, `.git/`), so every
+  provider uploads the paths as written.
+- **GitLab test results** make the job's artifacts upload with `when: always`,
+  because a job has one `artifacts` block; `uploadArtifact` paths are then also
+  uploaded from failed jobs, where other providers upload them only on success.
 - **Jenkins events.** The `push` event matches any build that is not a pull
   request, a manual (user) build, or a timer build, so upstream and remote
   triggers count as `push`.

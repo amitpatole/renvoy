@@ -189,9 +189,13 @@ func (pr *Provider) Validate(p *pipeline.Pipeline) diagnostics.List {
 		}
 	}
 	publishes := false
+	uploaded := map[string]bool{}
 	for _, j := range p.AllJobs() {
 		for _, s := range j.Steps {
 			publishes = publishes || s.Kind() == pipeline.StepPublishTestResults
+			if s.Kind() == pipeline.StepUploadArtifact {
+				uploaded[artifactKey(s.UploadArtifact.Name)] = true
+			}
 		}
 	}
 	for _, j := range p.AllJobs() {
@@ -250,11 +254,18 @@ func (pr *Provider) Validate(p *pipeline.Pipeline) diagnostics.List {
 						WithHint("use owner/repo@ref, owner/repo/path@ref, ./path, or docker://image"))
 				}
 				// Action inputs are case-insensitive; upload-artifact/merge names its output new-name.
-				if publishes && strings.HasPrefix(strings.ToLower(s.Uses), "actions/upload-artifact") {
+				if strings.HasPrefix(strings.ToLower(s.Uses), "actions/upload-artifact") {
 					for _, e := range s.With {
-						key := strings.ToLower(e.Name)
-						if (key == "name" || key == "new-name") && reservedTestResults(e.Value) {
-							add(diagnostics.Errorf(pipeline.JoinKey(s.Path()+".with", e.Name), "artifact names starting with %q are reserved for test results on GitHub Actions", testResultsPrefix).
+						if key := strings.ToLower(e.Name); key != "name" && key != "new-name" {
+							continue
+						}
+						path := pipeline.JoinKey(s.Path()+".with", e.Name)
+						switch {
+						case publishes && reservedTestResults(e.Value):
+							add(diagnostics.Errorf(path, "artifact names starting with %q are reserved for test results on GitHub Actions", testResultsPrefix).
+								WithHint("rename the artifact; GitHub requires artifact names to be unique in a workflow run"))
+						case uploaded[artifactKey(e.Value)]:
+							add(diagnostics.Errorf(path, "artifact %q is also uploaded by an uploadArtifact step", strings.TrimSpace(e.Value)).
 								WithHint("rename the artifact; GitHub requires artifact names to be unique in a workflow run"))
 						}
 					}
@@ -613,9 +624,14 @@ func bindings(s *pipeline.Step) []pipeline.Var {
 // testResultsPrefix starts the names of artifacts holding test results.
 const testResultsPrefix = "test-results-"
 
+// artifactKey normalises an artifact name for collision checks.
+func artifactKey(name string) string {
+	return strings.ToLower(strings.TrimSpace(name))
+}
+
 // reservedTestResults reports whether an artifact name could collide with a test results artifact.
 func reservedTestResults(name string) bool {
-	return strings.HasPrefix(strings.ToLower(strings.TrimSpace(name)), testResultsPrefix)
+	return strings.HasPrefix(artifactKey(name), testResultsPrefix)
 }
 
 // testResultsName names the artifact of a publishTestResults step. Artifact
@@ -682,7 +698,8 @@ func (r *renderer) step(j *pipeline.Job, s *pipeline.Step) *shared.Map {
 		m.Set("with", shared.NewMap().
 			Set("name", s.UploadArtifact.Name).
 			Set("path", pathList(s.UploadArtifact.Paths)).
-			Set("if-no-files-found", "error"))
+			Set("if-no-files-found", "error").
+			Set("include-hidden-files", true))
 	case pipeline.StepDownloadArtifact:
 		a := r.artifacts[s.DownloadArtifact.Name]
 		m.Set("uses", actionDownload)
@@ -695,7 +712,8 @@ func (r *renderer) step(j *pipeline.Job, s *pipeline.Step) *shared.Map {
 		m.Set("with", shared.NewMap().
 			Set("name", name).
 			Set("path", s.PublishTestResults.Path).
-			Set("if-no-files-found", "warn"))
+			Set("if-no-files-found", "warn").
+			Set("include-hidden-files", true))
 	default:
 		shell := s.ShellFor(j.OS())
 		m.Set("run", shared.Block(shared.Command(s, shell, envName)))

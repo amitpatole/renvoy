@@ -180,6 +180,10 @@ func (pr *Provider) Validate(p *pipeline.Pipeline) diagnostics.List {
 			add(diagnostics.Errorf(path, "%s %q cannot be a Jenkins environment variable: Groovy reserves the name", kind, name).
 				WithHint("rename it; Groovy keywords and default-imported class names such as URL or UUID cannot be assigned in an environment block"))
 		}
+		if conditionVar(name) {
+			add(diagnostics.Errorf(path, "%s %q would replace the Jenkins variable that branch, tag, and pull request conditions read", kind, name).
+				WithHint("rename it, for example to RELEASE_BRANCH"))
+		}
 	}
 	for _, v := range p.Variables {
 		reserved(pipeline.JoinKey("variables", v.Name), "variable", v.Name)
@@ -188,6 +192,11 @@ func (pr *Provider) Validate(p *pipeline.Pipeline) diagnostics.List {
 	for _, j := range p.AllJobs() {
 		for _, e := range j.Env {
 			reserved(pipeline.JoinKey(j.Path()+".env", e.Name), "env name", e.Name)
+		}
+		for _, axis := range j.Matrix {
+			if conditionVar(axis.Name) {
+				reserved(pipeline.JoinKey(j.Path()+".matrix", axis.Name), "matrix axis", axis.Name)
+			}
 		}
 		for _, name := range secretRefs(j) {
 			usedSecrets[name] = true
@@ -674,8 +683,9 @@ func (r *renderer) body(w *writer, j *pipeline.Job) {
 			continue
 		case pipeline.StepUploadArtifact:
 			includes := antPatterns(s.UploadArtifact.Paths)
-			w.line("archiveArtifacts artifacts: %s", sq(includes))
-			w.line("stash name: %s, includes: %s", sq(s.UploadArtifact.Name), sq(includes))
+			// Paths are literal, so keep files Ant excludes by default, such as .gitignore.
+			w.line("archiveArtifacts artifacts: %s, defaultExcludes: false", sq(includes))
+			w.line("stash name: %s, includes: %s, useDefaultExcludes: false", sq(s.UploadArtifact.Name), sq(includes))
 		case pipeline.StepDownloadArtifact:
 			w.line("unstash %s", sq(s.DownloadArtifact.Name))
 		default:
@@ -896,4 +906,15 @@ func validLabel(s string) bool {
 
 func isAlnum(c byte) bool {
 	return c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9'
+}
+
+// conditionVar reports whether name is a variable that Jenkins sets for each
+// build and that when conditions (branch, buildingTag, changeRequest) read.
+// A pipeline or stage environment entry with that name replaces it.
+func conditionVar(name string) bool {
+	switch name {
+	case "BRANCH_NAME", "BRANCH_IS_PRIMARY", "GIT_BRANCH", "GIT_LOCAL_BRANCH":
+		return true
+	}
+	return strings.HasPrefix(name, "CHANGE_") || strings.HasPrefix(name, "TAG_")
 }

@@ -221,3 +221,16 @@ All notable changes to this project are documented here. The format follows
   since GitHub, Azure, and Jenkins copy them as written. Conditions warn when an
   event has no matching trigger, or when they list branches with only the
   `pullRequest` event, because such a job can never run.
+- Jenkins rejects variables, job `env` entries, secrets, and matrix axes named
+  `BRANCH_NAME`, `GIT_BRANCH`, `GIT_LOCAL_BRANCH`, `BRANCH_IS_PRIMARY`, `TAG_*`, or
+  `CHANGE_*`: an `environment` entry replaces the value that `when` conditions
+  read, so `BRANCH_NAME: main` ran a `main`-only deploy job on every branch.
+  GitLab rejects pipeline variables, job `env` entries, and matrix axes that
+  replace the variables its generated rules read (`CI_COMMIT_BRANCH`,
+  `CI_PIPELINE_SOURCE`, `CI_MERGE_REQUEST_*`, and others) or that override
+  checkout (`GIT_STRATEGY`, `GIT_CHECKOUT`, previously checked only in job
+  `env`), and warns on other `GIT_*` clone settings. GitHub uploads include
+  hidden files, as on the other providers (`.next/` failed and `dist/.well-known`
+  was dropped), and a raw `actions/upload-artifact` step cannot reuse a name an
+  `uploadArtifact` step uploads. Jenkins archives and stashes files that Ant
+  excludes by default, such as `.gitignore`.

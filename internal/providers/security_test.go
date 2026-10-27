@@ -705,3 +705,49 @@ func TestRound22ReservedArtifactInputs(t *testing.T) {
 		}
 	}
 }
+
+func TestRound23ConditionVariables(t *testing.T) {
+	job := func(extra string) string {
+		return strings.Replace(round14Base, "        steps:", extra+"        steps:", 1)
+	}
+	top := func(vars string) string {
+		return strings.Replace(round14Base, "stages:", "variables: {"+vars+"}\nstages:", 1)
+	}
+	for _, c := range []struct{ src, path string }{
+		{top("BRANCH_NAME: main"), "variables.BRANCH_NAME"},
+		{job("        env: {TAG_NAME: v1}\n"), "stages[0].jobs[0].env.TAG_NAME"},
+		{job("        env: {CHANGE_ID: \"1\"}\n"), "stages[0].jobs[0].env.CHANGE_ID"},
+	} {
+		if d := round14(t, "jenkins", c.src); !hasDiag(d, diagnostics.Error, c.path, "conditions read") {
+			t.Errorf("jenkins %s: %v", c.path, d)
+		}
+	}
+	for _, c := range []struct{ src, path, msg string }{
+		{top("CI_COMMIT_BRANCH: main"), "variables.CI_COMMIT_BRANCH", "generated rules read"},
+		{job("        env: {CI_PIPELINE_SOURCE: push}\n"), "stages[0].jobs[0].env.CI_PIPELINE_SOURCE", "generated rules read"},
+		{top("GIT_STRATEGY: none"), "variables.GIT_STRATEGY", "checkout steps"},
+		{top("GIT_CHECKOUT: \"false\""), "variables.GIT_CHECKOUT", "checkout steps"},
+	} {
+		if d := round14(t, "gitlab", c.src); !hasDiag(d, diagnostics.Error, c.path, c.msg) {
+			t.Errorf("gitlab %s: %v", c.path, d)
+		}
+	}
+	if d := round14(t, "gitlab", top("GIT_DEPTH: \"1\"")); !hasDiag(d, diagnostics.Warning, "variables.GIT_DEPTH", "clones") {
+		t.Errorf("gitlab GIT_DEPTH: %v", d)
+	}
+}
+
+func TestRound23ArtifactUploads(t *testing.T) {
+	src := strings.Replace(round14Base, "        steps: [{run: echo MARKER}]\n",
+		"        steps:\n          - uploadArtifact: {name: dup, paths: [a]}\n          - uses: actions/upload-artifact@v4\n            with: {name: Dup, path: b}\n", 1)
+	if d := round14(t, "github-actions", src); !hasDiag(d, diagnostics.Error, "stages[0].jobs[0].steps[1].with.name", "also uploaded") {
+		t.Errorf("github duplicate raw upload: %v", d)
+	}
+	up := strings.Replace(round14Base, "        steps: [{run: echo MARKER}]\n", "        steps: [{uploadArtifact: {name: out, paths: [.next/]}}]\n", 1)
+	if out := render19(t, "github-actions", up); !strings.Contains(out, "include-hidden-files: true") {
+		t.Errorf("github upload skips hidden files:\n%s", out)
+	}
+	if out := render19(t, "jenkins", up); !strings.Contains(out, "defaultExcludes: false") || !strings.Contains(out, "useDefaultExcludes: false") {
+		t.Errorf("jenkins upload drops default excludes:\n%s", out)
+	}
+}

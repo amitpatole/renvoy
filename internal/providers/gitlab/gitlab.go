@@ -156,26 +156,40 @@ func (pr *Provider) Validate(p *pipeline.Pipeline) diagnostics.List {
 	add := func(d diagnostics.Diagnostic) { diags = append(diags, d.WithProvider(Name)) }
 
 	// GitLab's predefined variables use these prefixes; some cannot be overridden.
-	predefined := func(path, name string) {
-		if up := strings.ToUpper(name); strings.HasPrefix(up, "CI_") || strings.HasPrefix(up, "GITLAB_") {
+	// YAML variables (pipeline variables, job env, and matrix axes) also reach
+	// the rules Renvoy generates and the runner's clone settings; step env is
+	// exported inside the script and reaches neither.
+	predefined := func(path, name string, yamlVar bool) {
+		up := strings.ToUpper(name)
+		switch {
+		case yamlVar && ruleVar(up):
+			add(diagnostics.Errorf(path, "%q would replace the GitLab variable that the generated rules read", name).
+				WithHint("rename it; GitLab lets pipeline variables override predefined ones such as CI_COMMIT_BRANCH"))
+		case yamlVar && (up == "GIT_STRATEGY" || up == "GIT_CHECKOUT"):
+			add(diagnostics.Errorf(path, "%s is set by Renvoy from the job's checkout steps", name).
+				WithHint("add or remove the checkout step instead"))
+		case yamlVar && strings.HasPrefix(up, "GIT_"):
+			add(diagnostics.Warningf(path, "%q may change how the GitLab runner clones the repository", name).
+				WithHint("rename it unless you mean to change the clone; the runner reads GIT_DEPTH, GIT_CLEAN_FLAGS, and other GIT_ settings"))
+		case strings.HasPrefix(up, "CI_") || strings.HasPrefix(up, "GITLAB_"):
 			add(diagnostics.Warningf(path, "%q uses a prefix of GitLab's predefined variables, which it may ignore or that may change what GitLab does", name).
 				WithHint("rename it; GitLab does not let pipelines override some predefined variables, such as CI_ENVIRONMENT_URL"))
 		}
 	}
 	for _, v := range p.Variables {
-		predefined(pipeline.JoinKey("variables", v.Name), v.Name)
+		predefined(pipeline.JoinKey("variables", v.Name), v.Name, true)
 	}
 	for _, j := range p.AllJobs() {
 		for _, e := range j.Env {
-			predefined(pipeline.JoinKey(j.Path()+".env", e.Name), e.Name)
+			predefined(pipeline.JoinKey(j.Path()+".env", e.Name), e.Name, true)
 		}
 		for _, s := range j.Steps {
 			for _, e := range s.Env {
-				predefined(pipeline.JoinKey(s.Path()+".env", e.Name), e.Name)
+				predefined(pipeline.JoinKey(s.Path()+".env", e.Name), e.Name, false)
 			}
 		}
 		for _, axis := range j.Matrix {
-			predefined(pipeline.JoinKey(j.Path()+".matrix", axis.Name), axis.Name)
+			predefined(pipeline.JoinKey(j.Path()+".matrix", axis.Name), axis.Name, true)
 		}
 	}
 	artifacts := compiler.Artifacts(p)
@@ -190,12 +204,6 @@ func (pr *Provider) Validate(p *pipeline.Pipeline) diagnostics.List {
 		}
 		if slices.Contains(reservedKeys, j.Name) {
 			add(diagnostics.Infof(jp+".name", "%q is a reserved GitLab CI keyword, so the job is named %q", j.Name, jobKey(j)))
-		}
-		for _, e := range j.Env {
-			if strings.EqualFold(e.Name, "GIT_STRATEGY") {
-				add(diagnostics.Errorf(pipeline.JoinKey(jp+".env", e.Name), "GIT_STRATEGY is set by Renvoy from the job's checkout steps").
-					WithHint("add or remove the checkout step instead"))
-			}
 		}
 		if j.Retries > 2 {
 			add(diagnostics.Errorf(jp+".retries", "GitLab retries a job at most 2 times"))
@@ -634,4 +642,14 @@ func sortedKeys[V any](m map[string]V) []string {
 	}
 	slices.Sort(keys)
 	return keys
+}
+
+// ruleVar reports whether name is a predefined variable that the generated
+// workflow and job rules read.
+func ruleVar(name string) bool {
+	switch name {
+	case "CI_PIPELINE_SOURCE", "CI_COMMIT_BRANCH", "CI_COMMIT_TAG", "CI_COMMIT_REF_NAME", "CI_COMMIT_SHA", "CI_DEFAULT_BRANCH":
+		return true
+	}
+	return strings.HasPrefix(name, "CI_MERGE_REQUEST_")
 }
