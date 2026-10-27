@@ -368,6 +368,10 @@ GitLab `artifacts:when: always`, Azure `succeededOrFailed()`, Jenkins
 - **Matrix values in images** are checked one by one against the image
   reference grammar. `${git.branch}` in an image is a warning, because branch
   names with `/` or capitals make an invalid tag.
+- **GitLab `%NAME%` expansion.** GitLab expands `$NAME`, `${NAME}`, and
+  `%NAME%` in variables. Renvoy escapes `$`, but `%NAME%` has no escape, so it is
+  an error in variable, job `env`, and matrix values for GitLab. Secrets named
+  with the `CI_` or `GITLAB_` prefix are an error too.
 - **Variables that `${git.*}` reads.** Scripts read the commit and branch from
   `GITHUB_SHA` (GitHub), `CI_COMMIT_SHA` and `CI_COMMIT_REF_NAME` (GitLab),
   `BUILD_SOURCEVERSION` (Azure), `GIT_COMMIT` (Jenkins), and

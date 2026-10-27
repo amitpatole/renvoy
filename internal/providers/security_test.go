@@ -841,3 +841,14 @@ func TestRound28JavaPackageDeviceNames(t *testing.T) {
 		t.Errorf("javaPackage device name: %v", d)
 	}
 }
+
+func TestRound30GitLabExpansion(t *testing.T) {
+	src := strings.Replace(round14Base, "stages:", "variables: {PCT: \"100%CI_JOB_TOKEN%x\"}\nstages:", 1)
+	if d := round14(t, "gitlab", src); !hasDiag(d, diagnostics.Error, "variables.PCT", "would expand") {
+		t.Errorf("gitlab %%VAR%%: %v", d)
+	}
+	sec := strings.Replace(round14Base, "stages:", "secrets: [CI_JOB_TOKEN]\nstages:", 1)
+	if d := round14(t, "gitlab", sec); !hasDiag(d, diagnostics.Error, "secrets[0]", "predefined variables") {
+		t.Errorf("gitlab CI_ secret: %v", d)
+	}
+}

@@ -184,9 +184,36 @@ func (pr *Provider) Validate(p *pipeline.Pipeline) diagnostics.List {
 	for _, v := range p.Variables {
 		predefined(pipeline.JoinKey("variables", v.Name), v.Name, true)
 	}
-	// Secrets are project variables, which override predefined ones too.
+	// Secrets are project variables, which override predefined ones too; with a
+	// predefined name the script could read GitLab's value instead.
 	for i, s := range p.Secrets {
+		if up := strings.ToUpper(s); strings.HasPrefix(up, "CI_") || strings.HasPrefix(up, "GITLAB_") {
+			add(diagnostics.Errorf(pipeline.JoinIndex("secrets", i), "secret %q uses a prefix of GitLab's predefined variables, so scripts could read GitLab's value instead", s).
+				WithHint("rename the secret and its CI/CD variable"))
+			continue
+		}
 		predefined(pipeline.JoinIndex("secrets", i), s, true)
+	}
+	// GitLab expands $NAME, ${NAME}, and %NAME% in variables; Renvoy escapes $,
+	// but %NAME% has no escape.
+	percent := func(path string, vars pipeline.Vars) {
+		for _, e := range vars {
+			if percentVarRe.MatchString(e.Value) {
+				add(diagnostics.Errorf(pipeline.JoinKey(path, e.Name), "GitLab would expand %q in the value of %s", percentVarRe.FindString(e.Value), e.Name).
+					WithHint("set the value inside the script, where GitLab does not expand it"))
+			}
+		}
+	}
+	percent("variables", p.Variables)
+	for _, j := range p.AllJobs() {
+		percent(j.Path()+".env", j.Env)
+		for _, axis := range j.Matrix {
+			for i, val := range axis.Values {
+				if percentVarRe.MatchString(val) {
+					add(diagnostics.Errorf(pipeline.JoinIndex(pipeline.JoinKey(j.Path()+".matrix", axis.Name), i), "GitLab would expand %q in matrix value %q", percentVarRe.FindString(val), val))
+				}
+			}
+		}
 	}
 	for _, j := range p.AllJobs() {
 		for _, e := range j.Env {
@@ -319,6 +346,9 @@ type renderer struct {
 	cfg       config
 	artifacts map[string]compiler.Artifact
 }
+
+// percentVarRe matches the %NAME% form GitLab expands in variables.
+var percentVarRe = regexp.MustCompile(`%[A-Za-z_][A-Za-z0-9_]*%`)
 
 // escapeDollar keeps literal "$" from being expanded in GitLab variables.
 func escapeDollar(s string) string { return strings.ReplaceAll(s, "$", "$$") }

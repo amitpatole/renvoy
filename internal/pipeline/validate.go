@@ -326,6 +326,9 @@ func (v *validator) checkTriggers() {
 		emptyList("triggers.pullRequest.branches", t.PullRequest.Branches)
 		v.checkPatterns("triggers.pullRequest.branches", t.PullRequest.Branches)
 	}
+	if t.Schedules != nil && len(t.Schedules) == 0 {
+		v.errorf("triggers.schedules", "list is empty").Hint = "add a schedule, or remove the key"
+	}
 	if len(t.Schedules) > MaxSchedules {
 		v.errorf("triggers.schedules", "%d schedules are listed; at most %d are allowed", len(t.Schedules), MaxSchedules)
 	}
@@ -1224,11 +1227,12 @@ var (
 	// pwshBreaks are the characters PowerShell reads as line breaks.
 	pwshBreaks = strings.NewReplacer("\r\n", "\n", "\r", "\n", "\u0085", "\n", "\u2028", "\n", "\u2029", "\n")
 	// pwshAttribute matches a script attribute such as [CmdletBinding()] or [OutputType([int])].
-	pwshAttribute = regexp.MustCompile(`^\[[ \n]*[a-z][\w.]*[ \n]*(\(|\][ \n]*param\b)`)
+	pwshAttribute = regexp.MustCompile(`^\[[ \n]*[a-z][\w.]*[ \n]*\(`)
 	// pwshUsing matches a using statement anywhere in the text, including in
 	// strings and comments: rejecting those too keeps the check simple and
 	// leaves no way to hide a real one.
-	pwshUsing = regexp.MustCompile("(?i)\\busing(?:[\\s`\\p{Z}\\x{feff}]|<#[\\s\\S]*?#>)+(?:namespace|module|assembly)\\b")
+	// It runs on text whose PowerShell whitespace has been made plain spaces.
+	pwshUsing = regexp.MustCompile("(?i)\\busing(?: |`|<#[\\s\\S]*?#>)+(?:namespace|module|assembly)\\b")
 )
 
 // pwshSpace reports whether PowerShell reads r as whitespace.
@@ -1278,7 +1282,7 @@ func pwshCode(script string) string {
 			}
 			i++
 			write(" ")
-		case r == '#' && strings.ContainsRune(" \n;(){}|&,=", last):
+		case r == '#' && strings.ContainsRune(" \n;(){}[]|&,=", last):
 			// # starts a comment only at the start of a token; a#b is one word.
 			for i < len(rs) && rs[i] != '\n' {
 				i++
@@ -1342,7 +1346,13 @@ func pwshCode(script string) string {
 // strings and comments), and a param block or script attribute as the first
 // statement.
 func pwshLeadingStatement(script string) string {
-	if pwshUsing.MatchString(pwshBreaks.Replace(script)) {
+	plain := strings.Map(func(r rune) rune {
+		if pwshSpace(r) {
+			return ' '
+		}
+		return r
+	}, script)
+	if pwshUsing.MatchString(plain) {
 		return "using statements"
 	}
 	code := pwshCode(script)
@@ -1351,8 +1361,37 @@ func pwshLeadingStatement(script string) string {
 	case strings.HasPrefix(first, "param") &&
 		strings.HasPrefix(strings.TrimLeft(first[len("param"):], " \n"), "("):
 		return "param()"
-	case pwshAttribute.MatchString(first):
+	case pwshAttribute.MatchString(first) || attributesBeforeParam(first):
 		return "a script attribute such as [CmdletBinding()]"
 	}
 	return ""
+}
+
+// attributesBeforeParam reports whether code starts with one or more bracketed
+// groups ([CmdletBinding], [OutputType([int])]) followed by a param block,
+// which makes them script attributes.
+func attributesBeforeParam(code string) bool {
+	groups := 0
+	for strings.HasPrefix(code, "[") {
+		depth := 0
+		end := -1
+		for i, r := range code {
+			if r == '[' {
+				depth++
+			} else if r == ']' {
+				depth--
+				if depth == 0 {
+					end = i
+					break
+				}
+			}
+		}
+		if end < 0 {
+			return false
+		}
+		groups++
+		code = strings.TrimLeft(code[end+1:], " \n")
+	}
+	return groups > 0 && strings.HasPrefix(code, "param") &&
+		strings.HasPrefix(strings.TrimLeft(code[len("param"):], " \n"), "(")
 }

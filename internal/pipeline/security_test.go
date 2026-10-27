@@ -792,3 +792,27 @@ func TestRound29EmptyConditionListsAndControlSecrets(t *testing.T) {
 		t.Errorf("no warning for secret BASH_ENV:\n%s", render(diags))
 	}
 }
+
+func TestRound30PwshAndSchedules(t *testing.T) {
+	for _, run := range []string{
+		"using\u000bnamespace System.IO",
+		"[CmdletBinding][Foo]param()",
+		"[CmdletBinding]\n[OutputType([int])]\nparam()",
+		"[CmdletBinding]#c\nparam()",
+	} {
+		src := strings.Replace(minimal, "          - run: make test\n", "          - shell: pwsh\n            run: "+strconv.Quote(run)+"\n", 1)
+		_, diags := parse(t, src)
+		expectError(t, diags, "stages[0].jobs[0].steps[0].run", "must come first")
+	}
+	for _, run := range []string{"[string]$x = 'a'\necho $x", "$a[0]#c\necho ok"} {
+		src := strings.Replace(minimal, "          - run: make test\n", "          - shell: pwsh\n            run: "+strconv.Quote(run)+"\n", 1)
+		_, diags := parse(t, src)
+		for _, d := range diags {
+			if strings.Contains(d.Message, "must come first") {
+				t.Errorf("%q rejected: %s", run, d.Message)
+			}
+		}
+	}
+	_, diags := parse(t, strings.Replace(minimal, "push: {}", "push: {}\n  schedules: []", 1))
+	expectError(t, diags, "triggers.schedules", "list is empty")
+}

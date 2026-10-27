@@ -271,6 +271,12 @@ All notable changes to this project are documented here. The format follows
   bound as environment variables of the same name. Empty `branches` or `events`
   lists in conditions are an error, and the JSON Schema rejects empty pattern,
   event, and schedule lists as the CLI does.
+- GitLab expands `%NAME%` in variables, which Renvoy cannot escape, so such
+  text in variable, job `env`, and matrix values is an error for GitLab. GitLab
+  secrets named with the `CI_` or `GITLAB_` prefix are an error, since scripts
+  could read GitLab's predefined value. The PowerShell check also treats a
+  vertical tab as whitespace between `using` and `namespace`, finds chains of
+  attributes before `param()`, and `schedules: []` is an error.
 - Explicit empty trigger lists (`branches: []`, `tags: []`) are an error instead
   of matching everything. A Bamboo `javaPackage` segment that is a Windows
   device name (`con`, `nul`) is an error. The starter includes the Bamboo
