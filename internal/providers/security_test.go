@@ -3,6 +3,7 @@ package providers_test
 import (
 	"context"
 	"fmt"
+	"regexp"
 	"slices"
 	"strings"
 	"testing"
@@ -486,6 +487,104 @@ func TestRound18ProviderRules(t *testing.T) {
 			if got := !hasDiag(round14(t, prov, src), diagnostics.Error, "extensions.bamboo.requirements.linux[0]", "invalid requirement"); got != ok {
 				t.Errorf("%s requirement %q: accepted=%v, want %v", prov, req, got, ok)
 			}
+		}
+	}
+}
+
+func TestRound19ProviderRules(t *testing.T) {
+	job := func(extra string) string {
+		return strings.Replace(round14Base, "        steps:", extra+"        steps:", 1)
+	}
+	if d := round14(t, "azure-devops", job("        environment: {name: prod.eu}\n")); !hasDiag(d, diagnostics.Error, "stages[0].jobs[0].environment.name", "resource") {
+		t.Errorf("azure environment dot: %v", d)
+	}
+	for _, opts := range []string{"--network host", "--cpus 1 --net=none", "--entrypoint=/bin/sh"} {
+		d := round14(t, "github-actions", job("        container: {image: alpine, options: \""+opts+"\"}\n"))
+		if !hasDiag(d, diagnostics.Error, "stages[0].jobs[0].container.options", "does not support") {
+			t.Errorf("github options %q: %v", opts, d)
+		}
+	}
+	if d := round14(t, "github-actions", job("        container: {image: alpine, options: \"--network-alias db --cpus 1\"}\n")); hasDiag(d, diagnostics.Error, "stages[0].jobs[0].container.options", "does not support") {
+		t.Errorf("github --network-alias: %v", d)
+	}
+	for req, ok := range map[string]bool{"k=1.8.*": true, "k=(?i)jdk": true, "k=[a-z]+|x{2,3}?": true, "k=[": false, "k=(": false,
+		"k=*": false, "k=a{2,1}": false, "k=(?<x": false, "k=${bamboo.x}": false, "k=[z-a]": false} {
+		src := strings.Replace(round14Base, "planKey: PLAN}", "planKey: PLAN, requirements: {linux: [\""+req+"\"]}}", 1)
+		for _, prov := range []string{"bamboo", "bamboo-java"} {
+			if got := !hasDiag(round14(t, prov, src), diagnostics.Error, "extensions.bamboo.requirements.linux[0]", "regular expression"); got != ok {
+				t.Errorf("%s requirement %q: accepted=%v, want %v", prov, req, got, ok)
+			}
+		}
+	}
+}
+
+func render19(t *testing.T, provider, src string) string {
+	t.Helper()
+	res := config.Compile([]byte(src), "renvoy.yaml", registry.Names())
+	if res.Pipeline == nil {
+		t.Fatalf("does not compile: %v", res.Diagnostics)
+	}
+	p, _ := registry.Get(provider)
+	if d := p.Validate(res.Pipeline); d.HasErrors() {
+		t.Fatalf("%s: %v", provider, d)
+	}
+	files, err := p.Render(context.Background(), res.Pipeline, providers.RenderOptions{SourceName: "renvoy.yaml"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out strings.Builder
+	for _, f := range files {
+		out.Write(f.Content)
+	}
+	return out.String()
+}
+
+func TestAzureDeployJobIsRenamed(t *testing.T) {
+	src := strings.Replace(round14Base, "      - name: j\n        steps: [{run: echo MARKER}]\n",
+		"      - name: deploy\n        environment: {name: prod}\n        steps: [{run: echo MARKER}]\n      - name: after\n        dependsOn: [deploy]\n        steps: [{run: echo MARKER}]\n", 1)
+	out := render19(t, "azure-devops", src)
+	if !strings.Contains(out, "deployment: deploy_\n") || !strings.Contains(out, "dependsOn: [deploy_]") {
+		t.Fatalf("deploy job not renamed:\n%s", out)
+	}
+}
+
+func TestAzureLegNamesStartWithLetterAndFit(t *testing.T) {
+	long := strings.Repeat("v", 60)
+	src := strings.Replace(round14Base, "        steps:", "        matrix: {_x: ["+long+"1, "+long+"2, b], _y: ["+long+"]}\n        steps:", 1)
+	var doc struct {
+		Stages []struct {
+			Jobs []struct {
+				Strategy struct {
+					Matrix map[string]any `yaml:"matrix"`
+				} `yaml:"strategy"`
+			} `yaml:"jobs"`
+		} `yaml:"stages"`
+	}
+	out := render19(t, "azure-devops", src)
+	if err := yaml.Unmarshal([]byte(out), &doc); err != nil {
+		t.Fatal(err)
+	}
+	legs := doc.Stages[0].Jobs[0].Strategy.Matrix
+	if len(legs) != 3 {
+		t.Fatalf("legs %v:\n%s", legs, out)
+	}
+	for name := range legs {
+		if c := name[0]; len(name) > 100 || (c < 'a' || c > 'z') && (c < 'A' || c > 'Z') {
+			t.Errorf("invalid leg name %q", name)
+		}
+	}
+}
+
+func TestBambooJavaSplitsLongStrings(t *testing.T) {
+	src := strings.Replace(round14Base, "steps: [{run: echo MARKER}]", "steps: [{run: \"echo "+strings.Repeat("é", 40000)+"\"}]", 1)
+	out := render19(t, "bamboo-java", src)
+	if !strings.Contains(out, `String.join("", "echo `) {
+		t.Fatal("long script was not split")
+	}
+	for _, lit := range regexp.MustCompile(`"(?:[^"\\]|\\.)*"`).FindAllString(out, -1) {
+		// Each \u00e9 escape is two bytes in the class file.
+		if n := len(strings.ReplaceAll(lit, `\u00e9`, "é")); n > 65535 {
+			t.Fatalf("a %d-byte string constant remains", n)
 		}
 	}
 }

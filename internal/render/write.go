@@ -31,6 +31,7 @@ type Planned struct {
 	Content  []byte
 	Existing []byte // nil when the file does not exist
 	Action   Action
+	MaxBytes int // largest file the target platform accepts; 0 means no limit
 
 	comment, commentEnd string
 	backupPath          string      // set for Overwrite: where the previous content goes
@@ -99,7 +100,7 @@ func Plan(root string, files []providers.GeneratedFile, source string, force boo
 			return nil, nil, err
 		}
 		p := Planned{Path: f.Path, Abs: abs, Content: content, Existing: existing, comment: f.Comment,
-			commentEnd: f.CommentEnd, existingMode: mode}
+			commentEnd: f.CommentEnd, existingMode: mode, MaxBytes: f.MaxBytes}
 		switch {
 		case existing == nil:
 			p.Action = Create

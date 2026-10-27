@@ -29,6 +29,13 @@ var (
 // MaxSchedules bounds triggers.schedules.
 const MaxSchedules = 20
 
+// cronNameRe finds month and weekday names such as MON or JAN in a cron field.
+var cronNameRe = regexp.MustCompile(`[A-Za-z]{3}`)
+
+// MaxTimeoutMinutes bounds timeoutMinutes (one year). Jenkins and Azure
+// read the value as a 32-bit integer.
+const MaxTimeoutMinutes = 525600
+
 // MaxLabels bounds metadata.labels.
 const MaxLabels = 100
 
@@ -376,7 +383,7 @@ func ValidateCron(expr string) error {
 	for i, f := range fields {
 		if !cronFieldRe.MatchString(f) {
 			err := fmt.Errorf("cron %s field %q may contain only digits and * / , -", names[i], f)
-			if strings.ContainsFunc(f, unicode.IsLetter) {
+			if cronNameRe.MatchString(f) {
 				err = fmt.Errorf("%w; use numbers instead of names (0-6 for Sunday to Saturday, 1-12 for January to December)", err)
 			}
 			return err
@@ -484,8 +491,11 @@ func (v *validator) checkJob(path string, j *Job) {
 		v.errorf(path+".runsOn", "unknown runner %q", j.RunsOn).
 			Hint = "use linux, windows, or macos; map custom runner labels in provider extensions"
 	}
-	if j.TimeoutMinutes < 0 {
+	switch {
+	case j.TimeoutMinutes < 0:
 		v.errorf(path+".timeoutMinutes", "timeoutMinutes cannot be negative")
+	case j.TimeoutMinutes > MaxTimeoutMinutes:
+		v.errorf(path+".timeoutMinutes", "timeoutMinutes is %d; at most %d (one year) is supported", j.TimeoutMinutes, MaxTimeoutMinutes)
 	}
 	if j.Retries < 0 || j.Retries > 10 {
 		v.errorf(path+".retries", "retries must be between 0 and 10")
@@ -589,7 +599,7 @@ func (v *validator) checkMatrix(path string, m Matrix, axes map[string]bool) {
 			}
 			seen[val] = true
 			if !matrixValueRe.MatchString(val) {
-				v.errorf(JoinIndex(ap, i), "matrix value %q may contain only letters, digits, '.', '_', '-' and '/'", val)
+				v.errorf(JoinIndex(ap, i), "matrix value %q may contain only letters, digits, '.', '_', '-' and '/', and at most 64 characters", val)
 			}
 		}
 		combos *= max(len(axis.Values), 1)

@@ -180,6 +180,11 @@ func (pr *Provider) Validate(p *pipeline.Pipeline) diagnostics.List {
 			if len(j.Matrix) > 0 {
 				add(diagnostics.Errorf(jp+".matrix", "Azure deployment jobs (jobs with an environment) cannot use a matrix"))
 			}
+			if strings.Contains(j.Environment.Name, ".") {
+				add(diagnostics.Errorf(jp+".environment.name", "Azure reads %q as environment %q and resource %q",
+					j.Environment.Name, strings.SplitN(j.Environment.Name, ".", 2)[0], strings.SplitN(j.Environment.Name, ".", 2)[1]).
+					WithHint("use an environment name without a dot"))
+			}
 			if j.Environment.URL != "" {
 				add(diagnostics.Warningf(jp+".environment.url", "Azure Pipelines environments have no deployment URL; the url is dropped").
 					WithHint("remove url or record it in the environment description"))
@@ -258,6 +263,16 @@ type renderer struct {
 }
 
 func ident(name string) string { return strings.ReplaceAll(name, "-", "_") }
+
+// jobIdent is a job's Azure identifier. Azure does not accept "deploy" as a
+// deployment job name, so that job becomes "deploy_", which no other name
+// maps to because Renvoy names cannot end in a hyphen.
+func jobIdent(j *pipeline.Job) string {
+	if j.Environment != nil && j.Name == "deploy" {
+		return "deploy_"
+	}
+	return ident(j.Name)
+}
 
 func include(pats []string) *shared.Map {
 	return shared.NewMap().Set("include", shared.FlowSeq(pats))
@@ -421,6 +436,9 @@ func stepRefs(s *pipeline.Step) []pipeline.Ref {
 	return append(shared.CommandRefs(s), shared.TextRefs(texts...)...)
 }
 
+// maxLegName is the longest matrix leg name Azure accepts.
+const maxLegName = 100
+
 // matrixNames returns unique Azure identifiers for each matrix combination,
 // e.g. python_3_11.
 func matrixNames(axes pipeline.Matrix, combos [][]string) []string {
@@ -437,6 +455,13 @@ func matrixNames(axes pipeline.Matrix, combos [][]string) []string {
 			}
 			return '_'
 		}, strings.Join(parts, "_"))
+		// Leg names must start with a letter and have at most 100 characters.
+		if c := name[0]; (c < 'a' || c > 'z') && (c < 'A' || c > 'Z') {
+			name = "leg" + name
+		}
+		if len(name) > maxLegName-6 {
+			name = name[:maxLegName-6]
+		}
 		// Azure compares leg names ignoring case.
 		base := name
 		for n := 2; used[strings.ToLower(name)]; n++ {
@@ -473,14 +498,14 @@ func (r *renderer) job(j *pipeline.Job) *shared.Map {
 	m := shared.NewMap()
 	deployment := j.Environment != nil
 	if deployment {
-		m.Set("deployment", ident(j.Name))
+		m.Set("deployment", jobIdent(j))
 	} else {
-		m.Set("job", ident(j.Name))
+		m.Set("job", jobIdent(j))
 	}
 	m.Set("displayName", j.Name)
 	var deps []string
 	for _, d := range j.SameStageNeeds {
-		deps = append(deps, ident(d.Name))
+		deps = append(deps, jobIdent(d))
 	}
 	m.Set("dependsOn", shared.FlowSeq(deps))
 	// A stage succeeds even when a job in it was skipped, so jobs carry the

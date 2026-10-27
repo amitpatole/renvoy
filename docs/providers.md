@@ -294,8 +294,10 @@ GitLab `artifacts:when: always`, Azure `succeededOrFailed()`, Jenkins
   those prefixes are an error for Azure (for example `SECRET_KEY`, `INPUT_DIR`).
 - **GitHub limits.** Schedules that would fire more often than every 5 minutes
   warn, since GitHub runs them at most that often; a job may upload at most 500
-  artifacts (actions/upload-artifact); a generated workflow over 500 KB is an
-  error, since GitHub does not start runs from it. Timeouts over 360 minutes warn
+  artifacts (actions/upload-artifact); a workflow over 500 KB, counting any
+  custom block already in the file, is an error, since GitHub does not start
+  runs from it. The `--network`, `--net`, and `--entrypoint` container options
+  are an error, since GitHub does not support them. Timeouts over 360 minutes warn
   on GitHub and Azure, whose hosted runners stop jobs after 6 hours.
 - **Bamboo password variables.** Bamboo treats variables whose names contain
   `password`, `secret`, `passphrase`, or `sshkey` as passwords and refuses
@@ -305,7 +307,17 @@ GitLab `artifacts:when: always`, Azure `succeededOrFailed()`, Jenkins
   because GitLab defines variables with those prefixes and does not let
   pipelines override some of them (`CI_ENVIRONMENT_URL`, `CI_PAGES_URL`).
 - **Bamboo requirements** need a non-blank capability key and, after `=`, a
-  non-blank match value without control characters.
+  non-blank match value without control characters. Bamboo matches the value as
+  a Java regular expression, so it must be one Renvoy can confirm Bamboo
+  accepts: literals, `.`, `^`, `$`, `|`, `(...)`, `(?:...)`, `(?=...)`,
+  `(?!...)`, inline flags such as `(?i)`, `[a-z]` classes, and `*`, `+`, `?`,
+  `{n,m}` after an atom. Lookbehind, nested classes, and a literal `{` are not
+  accepted.
+- **Azure deployment jobs.** Azure does not accept `deploy` as a deployment job
+  name, so that job is named `deploy_` in Azure; environment names with a dot
+  are an error, since Azure reads `prod.eu` as environment `prod`, resource
+  `eu`. Matrix leg names start with a letter and are at most 100 characters;
+  Renvoy prefixes and shortens them as needed and keeps them unique.
 - **GitLab limits.** A job may need at most 50 jobs by default (`ci_max_needs`
   on self-managed instances), so more is a warning; `parallel:matrix` creates
   at most 200 jobs, so a larger matrix is an error.

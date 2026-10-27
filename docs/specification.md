@@ -307,4 +307,5 @@ combinations in total, branch and tag patterns up to 255 characters and 100 per
 list, cron expressions up to 256 characters, 1 MiB of condition text repeated on
 dependent jobs, 16 matrix axes per job,
 1 MiB of matrix entries (axis text times combinations), names up to 128
-characters, and generated or existing files up to 4 MiB.
+characters, matrix values up to 64 characters, `timeoutMinutes` up to 525,600
+(one year), and generated or existing files up to 4 MiB.

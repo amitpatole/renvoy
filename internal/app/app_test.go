@@ -403,6 +403,12 @@ func TestPartialWriteIsReported(t *testing.T) {
 	if !strings.Contains(r.stderr, "create    .gitlab-ci.yml") || !strings.Contains(r.stderr, "stopped: the files listed above were written") {
 		t.Fatalf("stderr: %s", r.stderr)
 	}
+	// When the first write fails, nothing is claimed as written.
+	r = run(t, dir, "generate", "-p", "github-actions")
+	expectCode(t, r, app.ExitFailure)
+	if !strings.Contains(r.stderr, "stopped: no files were written") {
+		t.Fatalf("stderr: %s", r.stderr)
+	}
 }
 
 // Round 14: init --force keeps the replaced file as a backup, with its permissions.
@@ -446,4 +452,41 @@ func TestGitHubWorkflowSizeLimit(t *testing.T) {
 		t.Fatalf("files were written: %v", err)
 	}
 	expectCode(t, run(t, dir, "generate", "-p", "gitlab", "--dry-run"), app.ExitOK)
+}
+
+// The size limit applies to the final file, custom block included.
+func TestGitHubSizeLimitCountsCustomBlock(t *testing.T) {
+	var b strings.Builder
+	b.WriteString("apiVersion: renvoy.dev/v1alpha1\nkind: Pipeline\nmetadata: {name: big}\ntriggers: {push: {}}\nstages:\n  - name: s\n    jobs:\n")
+	for j := 0; j < 200; j++ {
+		fmt.Fprintf(&b, "      - name: j%d\n        steps:\n", j)
+		for s := 0; s < 30; s++ {
+			fmt.Fprintf(&b, "          - run: echo MARKER-%03d-%02d-abcdefghijklmnop\n", j, s)
+		}
+	}
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "renvoy.yaml"), b.String())
+	expectCode(t, run(t, dir, "generate", "-p", "github-actions"), app.ExitOK)
+	path := filepath.Join(dir, ".github", "workflows", "big.yml")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(data) < 300000 || len(data) > 500*1024 {
+		t.Fatalf("generated workflow is %d bytes; adjust the test", len(data))
+	}
+	custom := strings.Repeat("# "+strings.Repeat("x", 98)+"\n", 2500)
+	edited := strings.Replace(string(data), "# Provider-specific content retained during regeneration.\n", custom, 1)
+	if edited == string(data) {
+		t.Fatal("no custom block placeholder")
+	}
+	writeFile(t, path, edited)
+	r := run(t, dir, "generate", "-p", "github-actions")
+	expectCode(t, r, app.ExitIncompatible)
+	if !strings.Contains(r.stderr, "does not run files over") {
+		t.Fatalf("stderr: %s", r.stderr)
+	}
+	if got, _ := os.ReadFile(path); string(got) != edited {
+		t.Fatal("the file was changed")
+	}
 }

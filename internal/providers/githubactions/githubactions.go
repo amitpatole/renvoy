@@ -189,6 +189,15 @@ func (pr *Provider) Validate(p *pipeline.Pipeline) diagnostics.List {
 		}
 	}
 	for _, j := range p.AllJobs() {
+		if j.Container != nil {
+			for _, opt := range strings.Fields(j.Container.Options) {
+				name, _, _ := strings.Cut(opt, "=")
+				if name == "--network" || name == "--net" || name == "--entrypoint" {
+					add(diagnostics.Errorf(j.Path()+".container.options", "GitHub Actions does not support the %s container option", name).
+						WithHint("remove it; GitHub sets the container network and entrypoint itself"))
+				}
+			}
+		}
 		if j.TimeoutMinutes > maxHostedMinutes {
 			add(diagnostics.Warningf(j.Path()+".timeoutMinutes", "GitHub-hosted runners stop jobs after %d minutes; %d applies only on self-hosted runners", maxHostedMinutes, j.TimeoutMinutes))
 		}
@@ -287,9 +296,8 @@ func (pr *Provider) Render(_ context.Context, p *pipeline.Pipeline, _ providers.
 		Content: body,
 		Comment: providers.CommentHash,
 		YAML:    true,
-		// GitHub does not start runs from workflow files over 500 KB; leave room
-		// for the generated header.
-		MaxBytes: 500*1024 - 1024,
+		// GitHub does not start runs from workflow files over 500 KB.
+		MaxBytes: 500 * 1024,
 		// Every other top-level key (env, defaults, permissions, on) applies to the
 		// generated jobs; jobs cannot be added because "jobs" is generated.
 		CustomKeys: providers.CustomKeyPolicy{Allowed: []string{"concurrency", "run-name"}},

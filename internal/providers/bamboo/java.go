@@ -184,9 +184,22 @@ func (w *javaWriter) use(classes ...string) {
 // jstr renders a Java string literal. Non-ASCII and control characters become
 // \u escapes (surrogate pairs above U+FFFF) so the source is plain ASCII.
 func jstr(s string) string {
+	var chunks []string
 	var b strings.Builder
+	size := 0
 	b.WriteByte('"')
 	for _, r := range s {
+		// A string constant holds at most 65535 bytes of modified UTF-8, so
+		// long strings are split into chunks joined at run time.
+		n := modifiedUTF8Len(r)
+		if size+n > maxJavaChunk {
+			b.WriteByte('"')
+			chunks = append(chunks, b.String())
+			b.Reset()
+			b.WriteByte('"')
+			size = 0
+		}
+		size += n
 		switch {
 		case r == '\\':
 			b.WriteString(`\\`)
@@ -208,7 +221,28 @@ func jstr(s string) string {
 		}
 	}
 	b.WriteByte('"')
-	return b.String()
+	if chunks == nil {
+		return b.String()
+	}
+	return "String.join(\"\", " + strings.Join(append(chunks, b.String()), ", ") + ")"
+}
+
+// maxJavaChunk keeps each string constant well under the 65535-byte limit.
+const maxJavaChunk = 60000
+
+// modifiedUTF8Len is the size of r in a Java class file's constant pool.
+func modifiedUTF8Len(r rune) int {
+	switch {
+	case r == 0:
+		return 2
+	case r < 0x80:
+		return 1
+	case r < 0x800:
+		return 2
+	case r <= 0xffff:
+		return 3
+	}
+	return 6
 }
 
 func (w *javaWriter) key(k string) string {

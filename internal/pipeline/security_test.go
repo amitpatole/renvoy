@@ -570,3 +570,21 @@ func TestRound18OptionsAndCronNames(t *testing.T) {
 	_, diags := parse(t, src)
 	expectError(t, diags, "triggers.schedules[0].cron", "use numbers instead of names")
 }
+
+func TestRound19TimeoutAndCronHint(t *testing.T) {
+	src := strings.Replace(minimal, "        steps:\n", "        timeoutMinutes: 525601\n        steps:\n", 1)
+	_, diags := parse(t, src)
+	expectError(t, diags, "stages[0].jobs[0].timeoutMinutes", "at most 525600")
+	src = strings.Replace(minimal, "        steps:\n", "        timeoutMinutes: 525600\n        steps:\n", 1)
+	if _, diags := parse(t, src); diags.HasErrors() {
+		t.Fatalf("one year should be accepted: %v", diags)
+	}
+	src = strings.Replace(minimal, "push: {}", "schedules: [{cron: \"0 9 L * *\", branches: [main]}]", 1)
+	_, diags = parse(t, src)
+	expectError(t, diags, "triggers.schedules[0].cron", "may contain only digits")
+	for _, d := range diags {
+		if strings.Contains(d.Message, "instead of names") {
+			t.Fatalf("name hint for L: %v", d)
+		}
+	}
+}

@@ -155,6 +155,9 @@ func decode(p *pipeline.Pipeline, provider string) (extension, diagnostics.List)
 				strings.ContainsFunc(r, unicode.IsControl) {
 				diags = append(diags, diagnostics.Errorf(pipeline.JoinIndex(rp, i), "invalid requirement %q", r).
 					WithHint(`use a capability key, or key=regex to match its value`))
+			} else if hasValue && !matchRegexOK(value) {
+				diags = append(diags, diagnostics.Errorf(pipeline.JoinIndex(rp, i), "requirement %q matches with %q, which is not a regular expression Renvoy can confirm Bamboo accepts", r, value).
+					WithHint("Bamboo matches requirement values as Java regular expressions; use literals, ., [a-z] classes, (...) groups, | and *, +, ?, {n,m} after an atom"))
 			}
 		}
 	}

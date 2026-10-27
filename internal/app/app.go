@@ -95,7 +95,7 @@ func (e *env) rootCmd() *cobra.Command {
 	root := &cobra.Command{
 		Use:           "renvoy",
 		Short:         "Compile one provider-neutral pipeline into native CI/CD configuration",
-		Long:          "Renvoy compiles a single renvoy.yaml into native pipeline files for GitHub Actions,\nGitLab CI, Azure DevOps Pipelines, and Jenkins, and reports every portability gap.",
+		Long:          "Renvoy compiles a single renvoy.yaml into native pipeline files for GitHub Actions,\nGitLab CI, Azure DevOps Pipelines, Jenkins, and Bamboo (YAML and Java Specs), and reports\nevery portability gap.",
 		SilenceUsage:  true,
 		SilenceErrors: true,
 	}
@@ -235,22 +235,24 @@ func (e *env) plan(ctx context.Context, file, output string, provs []providers.P
 		}
 		files = append(files, f...)
 	}
+	planned, conflicts, err := render.Plan(outDir, files, source, force)
+	if err != nil {
+		return nil, "", err
+	}
+	// Check sizes on the final bytes, which include the header and any
+	// custom block already in the file.
 	var tooLarge diagnostics.List
-	for _, f := range files {
-		if f.MaxBytes > 0 && len(f.Content) > f.MaxBytes {
-			tooLarge = append(tooLarge, diagnostics.Diagnostic{Severity: diagnostics.Error, File: f.Path,
-				Message: fmt.Sprintf("the generated file is %d bytes; the target platform does not run files over %d bytes", len(f.Content), f.MaxBytes),
-				Hint:    "split the pipeline or reduce the number of jobs and steps"})
+	for _, p := range planned {
+		if p.MaxBytes > 0 && len(p.Content) > p.MaxBytes {
+			tooLarge = append(tooLarge, diagnostics.Diagnostic{Severity: diagnostics.Error, File: p.Path,
+				Message: fmt.Sprintf("the file would be %d bytes; the target platform does not run files over %d bytes", len(p.Content), p.MaxBytes),
+				Hint:    "split the pipeline, reduce the number of jobs and steps, or shrink the custom block"})
 		}
 	}
 	if len(tooLarge) > 0 {
 		e.printDiags(tooLarge, "text")
 		fmt.Fprintln(e.stderr, "\nno files were written")
 		return nil, "", exitError{ExitIncompatible}
-	}
-	planned, conflicts, err := render.Plan(outDir, files, source, force)
-	if err != nil {
-		return nil, "", err
 	}
 	if len(conflicts) > 0 {
 		var l diagnostics.List
@@ -318,7 +320,11 @@ func (e *env) generateCmd() *cobra.Command {
 				}
 			}
 			if err != nil {
-				fmt.Fprintf(e.stderr, "stopped: the files listed above were written; the rest were not\n")
+				if len(res.Written) == 0 {
+					fmt.Fprintf(e.stderr, "stopped: no files were written\n")
+				} else {
+					fmt.Fprintf(e.stderr, "stopped: the files listed above were written; the rest were not\n")
+				}
 				return err
 			}
 			return nil

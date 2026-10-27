@@ -183,3 +183,14 @@ All notable changes to this project are documented here. The format follows
   blank key or match value; container options with control characters are
   rejected (Bamboo, following Java, read U+001C to U+001F as blank); cron fields
   with day or month names get a hint to use numbers.
+- Azure: a deployment job named `deploy` (an Azure keyword) is renamed `deploy_`,
+  environment names with a dot (which Azure reads as `environment.resource`) are
+  rejected, and matrix leg names always start with a letter and fit in 100
+  characters. GitHub rejects the `--network`, `--net`, and `--entrypoint`
+  container options, which it does not support, and the 500 KB workflow limit
+  is checked on the final file, custom block included. `timeoutMinutes` is
+  capped at 525,600 (one year); Jenkins and Azure read it as a 32-bit integer.
+  Bamboo requirement match values must be regular expressions Bamboo accepts
+  (unbalanced brackets or `${...}` failed plan import), and Bamboo Java Specs
+  split strings over the 65,535-byte class-file constant limit, which javac
+  refused to compile.
