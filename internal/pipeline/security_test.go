@@ -663,7 +663,7 @@ func TestRound26SecretCaseAndPwshFirstStatements(t *testing.T) {
 		_, diags := parse(t, src)
 		expectError(t, diags, "stages[0].jobs[0].steps[0].run", "must come first")
 	}
-	for _, run := range []string{"echo using namespace", "$param = 1", "#requires -Version 7\necho a"} {
+	for _, run := range []string{"$param = 1", "#requires -Version 7\necho a"} {
 		src := strings.Replace(minimal, "          - run: make test\n", "          - shell: pwsh\n            run: "+strconv.Quote(run)+"\n", 1)
 		_, diags := parse(t, src)
 		for _, d := range diags {
@@ -729,9 +729,8 @@ func TestRound28PwshTokenizer(t *testing.T) {
 		expectError(t, diags, "stages[0].jobs[0].steps[0].run", "must come first")
 	}
 	for _, run := range []string{
-		"$s = @'\nusing namespace System\n'@\necho $s",
-		"echo 'using namespace x'",
 		"echo \"a`\"b\"\necho ok",
+		"echo a#b\necho ok",
 		"function f {\n  param($x)\n  $x\n}\nf 1",
 	} {
 		src := strings.Replace(minimal, "          - run: make test\n", "          - shell: pwsh\n            run: "+strconv.Quote(run)+"\n", 1)
@@ -752,5 +751,44 @@ func TestRound28EmptyTriggerLists(t *testing.T) {
 	} {
 		_, diags := parse(t, strings.Replace(minimal, "push: {}", c.trigger, 1))
 		expectError(t, diags, c.path, "list is empty")
+	}
+}
+
+func TestRound29PwshEscapes(t *testing.T) {
+	for _, run := range []string{
+		"param `\n($x)",
+		"using `\nnamespace System.IO",
+		"echo `'\nusing namespace System.IO",
+		"echo `#; using namespace System.IO",
+		"echo a#b; using namespace System.IO",
+		"echo \"$('\"')\"\nusing namespace X",
+		"{using namespace System.IO}",
+		"[\nCmdletBinding()]\nparam()",
+		"[CmdletBinding]param()",
+		"$s = @'\nusing namespace System\n'@",
+		"# using namespace System.IO",
+		"Write-Host \"using namespace System.IO\"",
+		"function f { using namespace System }",
+		"Write-Host \"$('\"')\"\nusing namespace System.IO",
+		"[CmdletBinding]\nparam()",
+	} {
+		src := strings.Replace(minimal, "          - run: make test\n", "          - shell: pwsh\n            run: "+strconv.Quote(run)+"\n", 1)
+		_, diags := parse(t, src)
+		expectError(t, diags, "stages[0].jobs[0].steps[0].run", "must come first")
+	}
+}
+
+func TestRound29EmptyConditionListsAndControlSecrets(t *testing.T) {
+	src := strings.Replace(minimal, "        steps:", "        when: {branches: [], events: [push]}\n        steps:", 1)
+	_, diags := parse(t, src)
+	expectError(t, diags, "stages[0].jobs[0].when.branches", "list is empty")
+	src = strings.Replace(minimal, "stages:", "secrets: [BASH_ENV]\nstages:", 1)
+	_, diags = parse(t, src)
+	found := false
+	for _, d := range diags {
+		found = found || (d.Severity == diagnostics.Warning && d.Path == "secrets[0]" && strings.Contains(d.Message, "changes how shells"))
+	}
+	if !found {
+		t.Errorf("no warning for secret BASH_ENV:\n%s", render(diags))
 	}
 }

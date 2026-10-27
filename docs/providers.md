@@ -348,7 +348,9 @@ GitLab `artifacts:when: always`, Azure `succeededOrFailed()`, Jenkins
 - **PowerShell first statements.** `using` statements, a leading `param()`, and
   script attributes such as `[CmdletBinding()]` must start a script, but
   providers add statements before each run script, so they are an error, also
-  after comment-based help (`<# ... #>`).
+  after comment-based help (`<# ... #>`). Renvoy looks for `using namespace`,
+  `using module`, and `using assembly` anywhere in the script, including in
+  strings and comments, so rephrase such text if it is not a statement.
 - **Names that differ only by case.** Artifact names that differ only by case
   are an error (Azure artifact names and Windows file systems ignore case). A
   step `env` name that differs from a job `env` name only by case is a warning:

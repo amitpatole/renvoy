@@ -152,6 +152,7 @@ stages:
 - **Conditions.** `when` holds `branches` and `events`; both must match when both are
   present. Branch conditions match branch builds only, never pull request builds.
   A job whose condition is false is skipped, and so is everything that depends on it.
+  Empty `branches` or `events` lists are an error.
   An event with no matching trigger (`manual` without `triggers.manual`) is a
   warning, and so is a condition listing `branches` with only the `pullRequest`
   event, since neither can ever match.

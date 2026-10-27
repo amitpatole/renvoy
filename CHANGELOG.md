@@ -264,7 +264,13 @@ All notable changes to this project are documented here. The format follows
 - The PowerShell first-statement check reads comments, strings, and
   here-strings like PowerShell does, so `<#` inside a line comment or string no
   longer hides a `using` statement, `param` followed by a line break is found,
-  and `using` text inside a here-string is no longer rejected.
+  and backtick escapes and continuations are read as PowerShell does. `using`
+  statements are found anywhere in the script text, including in strings and
+  comments, so none can be hidden from the check. Secrets named after shell
+  control variables (`PATH`, `BASH_ENV`) warn like variables do, since they are
+  bound as environment variables of the same name. Empty `branches` or `events`
+  lists in conditions are an error, and the JSON Schema rejects empty pattern,
+  event, and schedule lists as the CLI does.
 - Explicit empty trigger lists (`branches: []`, `tags: []`) are an error instead
   of matching everything. A Bamboo `javaPackage` segment that is a Windows
   device name (`con`, `nul`) is an error. The starter includes the Bamboo

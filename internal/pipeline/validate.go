@@ -138,6 +138,8 @@ func (v *validator) run() {
 	for i, s := range p.Secrets {
 		path := JoinIndex("secrets", i)
 		v.checkEnvName(path, s, "secret")
+		// Secrets are bound as environment variables of the same name.
+		v.checkControlEnv(path, s, "")
 		if prev, dup := seenSecrets[strings.ToUpper(s)]; dup && prev == s {
 			v.errorf(path, "secret %q is declared more than once", s)
 		} else if dup {
@@ -491,6 +493,13 @@ func (v *validator) checkCondition(path string, c *Condition) {
 	}
 	if c.IsEmpty() {
 		v.errorf(path, "condition is empty").Hint = "set branches or events, or remove when"
+	} else {
+		if c.Branches != nil && len(c.Branches) == 0 {
+			v.errorf(path+".branches", "list is empty").Hint = "list at least one pattern, or remove the key"
+		}
+		if c.Events != nil && len(c.Events) == 0 {
+			v.errorf(path+".events", "list is empty").Hint = "list at least one event, or remove the key"
+		}
 	}
 	v.checkPatterns(path+".branches", c.Branches)
 	t := v.p.Triggers
@@ -789,7 +798,7 @@ func (v *validator) checkControlEnv(path, name, value string) {
 	t, err := ParseTemplate(value)
 	if err == nil && slices.Contains(t.Refs(), Ref{Namespace: NSGit, Name: GitBranch}) &&
 		(isSensitiveEnvName(name) || !neutralBranchNameRe.MatchString(strings.ToUpper(name))) {
-		v.errorf(path, "%s cannot be set from ${git.branch}: only neutral names such as BRANCH_NAME or IMAGE_TAG may carry a branch name, because tools act on many variables", name).
+		v.errorf(path, "%s cannot be set from ${git.branch}: only neutral names such as RELEASE_BRANCH or IMAGE_TAG may carry a branch name, because tools act on many variables", name).
 			Hint = "use a name with one of the words BRANCH, REF, TAG, VERSION, NAME, LABEL, ENV, ENVIRONMENT, CHANNEL, TARGET, URL, or SLUG, such as DEPLOY_ENV"
 		return
 	}
@@ -1215,7 +1224,11 @@ var (
 	// pwshBreaks are the characters PowerShell reads as line breaks.
 	pwshBreaks = strings.NewReplacer("\r\n", "\n", "\r", "\n", "\u0085", "\n", "\u2028", "\n", "\u2029", "\n")
 	// pwshAttribute matches a script attribute such as [CmdletBinding()] or [OutputType([int])].
-	pwshAttribute = regexp.MustCompile(`^\[ *[a-z][\w.]* *\(`)
+	pwshAttribute = regexp.MustCompile(`^\[[ \n]*[a-z][\w.]*[ \n]*(\(|\][ \n]*param\b)`)
+	// pwshUsing matches a using statement anywhere in the text, including in
+	// strings and comments: rejecting those too keeps the check simple and
+	// leaves no way to hide a real one.
+	pwshUsing = regexp.MustCompile("(?i)\\busing(?:[\\s`\\p{Z}\\x{feff}]|<#[\\s\\S]*?#>)+(?:namespace|module|assembly)\\b")
 )
 
 // pwshSpace reports whether PowerShell reads r as whitespace.
@@ -1243,19 +1256,34 @@ func pwshCode(script string) string {
 		}
 		return true
 	}
+	last := '\n' // the last rune written
+	write := func(s string) {
+		b.WriteString(s)
+		last = []rune(s)[len([]rune(s))-1]
+	}
 	for i := 0; i < len(rs); i++ {
 		r := rs[i]
 		switch {
+		case r == '`':
+			// An escape outside a string: a line continuation, or a literal
+			// character that cannot start a comment or a string.
+			i++
+			if i < len(rs) && rs[i] == '\n' {
+				write(" ")
+			} else {
+				write("x")
+			}
 		case r == '<' && i+1 < len(rs) && rs[i+1] == '#':
 			for i += 2; i < len(rs) && (rs[i] != '#' || i+1 >= len(rs) || rs[i+1] != '>'); i++ {
 			}
 			i++
-			b.WriteByte(' ')
-		case r == '#':
+			write(" ")
+		case r == '#' && strings.ContainsRune(" \n;(){}|&,=", last):
+			// # starts a comment only at the start of a token; a#b is one word.
 			for i < len(rs) && rs[i] != '\n' {
 				i++
 			}
-			b.WriteString(" \n")
+			write(" \n")
 		case r == '@' && i+1 < len(rs) && (single(rs[i+1]) || double(rs[i+1])):
 			// A here-string opens with @' or @" at the end of a line and
 			// closes with '@ or "@ at the start of a line.
@@ -1264,7 +1292,7 @@ func pwshCode(script string) string {
 				j++
 			}
 			if j < len(rs) && rs[j] != '\n' {
-				b.WriteRune(r)
+				write(string(r))
 				continue
 			}
 			for i = j; i < len(rs); i++ {
@@ -1273,7 +1301,7 @@ func pwshCode(script string) string {
 					break
 				}
 			}
-			b.WriteString("''")
+			write("''")
 		case single(r):
 			for i++; i < len(rs); i++ {
 				if single(rs[i]) {
@@ -1284,7 +1312,7 @@ func pwshCode(script string) string {
 					break
 				}
 			}
-			b.WriteString("''")
+			write("''")
 		case double(r):
 			for i++; i < len(rs); i++ {
 				if rs[i] == '`' {
@@ -1299,29 +1327,25 @@ func pwshCode(script string) string {
 					break
 				}
 			}
-			b.WriteString("''")
+			write("''")
 		case pwshSpace(r) && r != '\n':
-			b.WriteByte(' ')
+			write(" ")
 		default:
-			b.WriteRune(unicode.ToLower(r))
+			write(string(unicode.ToLower(r)))
 		}
 	}
 	return b.String()
 }
 
 // pwshLeadingStatement returns a PowerShell statement in a script that must be
-// the first statement of a script, or "": using statements anywhere, and a
-// param block or script attribute as the first statement.
+// the first statement of a script, or "": using statements anywhere (even in
+// strings and comments), and a param block or script attribute as the first
+// statement.
 func pwshLeadingStatement(script string) string {
-	code := pwshCode(script)
-	for _, stmt := range strings.FieldsFunc(code, func(r rune) bool { return r == '\n' || r == ';' }) {
-		if f := strings.Fields(stmt); len(f) > 1 && f[0] == "using" {
-			switch f[1] {
-			case "namespace", "module", "assembly":
-				return "using"
-			}
-		}
+	if pwshUsing.MatchString(pwshBreaks.Replace(script)) {
+		return "using statements"
 	}
+	code := pwshCode(script)
 	first := strings.TrimLeftFunc(code, func(r rune) bool { return r == ' ' || r == '\n' || r == ';' })
 	switch {
 	case strings.HasPrefix(first, "param") &&
