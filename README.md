@@ -1,5 +1,7 @@
 # Renvoy
 
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.23695857.svg)](https://doi.org/10.5281/zenodo.23695857)
+
 Renvoy compiles one provider-neutral CI/CD definition into native pipeline files
 for GitHub Actions, GitLab CI, Azure DevOps Pipelines, Jenkins, and Atlassian
 Bamboo (YAML and Java Specs).
@@ -196,6 +198,14 @@ renvoy version                     print the version
 - [External provider plugins (proposed)](docs/plugins.md)
 - [Implementation notes](docs/implementation-notes.md)
 - [Contributing](CONTRIBUTING.md) and [security policy](SECURITY.md)
+
+## Citing Renvoy
+
+If you use Renvoy in research or a publication, cite it with the concept DOI
+[10.5281/zenodo.23695857](https://doi.org/10.5281/zenodo.23695857), which always
+points to the latest version; each release also has its own DOI on Zenodo.
+[`CITATION.cff`](CITATION.cff) has the details, and GitHub's "Cite this
+repository" button uses it.
 
 ## License
 

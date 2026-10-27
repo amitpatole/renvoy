@@ -6,6 +6,11 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- The Zenodo concept DOI (10.5281/zenodo.23695857) in the README and
+  `CITATION.cff`.
+
 ## [0.1.0] - 2026-10-27
 
 First public release.

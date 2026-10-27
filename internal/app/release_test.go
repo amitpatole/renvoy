@@ -33,6 +33,10 @@ func TestReleaseMetadataInSync(t *testing.T) {
 		t.Errorf("CITATION.cff date-released = %v, want %q", got, date)
 	}
 
+	if !regexp.MustCompile(`(?m)^doi: "10\.5281/zenodo\.\d+"$`).MatchString(cff) {
+		t.Error("CITATION.cff has no Zenodo concept DOI")
+	}
+
 	var zenodo struct {
 		Version            string `json:"version"`
 		RelatedIdentifiers []struct {
