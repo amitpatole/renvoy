@@ -22,15 +22,19 @@ overwrites files you edited by hand.
 
 ## Install
 
-Renvoy has not published a release yet. Build it from source with Go 1.27 or newer:
+Renvoy has not published a release yet. Install the latest commit with Go 1.27
+or newer:
+
+```bash
+go install github.com/amitpatole/renvoy/cmd/renvoy@latest
+```
+
+or build it from source:
 
 ```bash
 git clone https://github.com/amitpatole/renvoy && cd renvoy
 make build                 # writes bin/renvoy
 ```
-
-Once the repository is public, `go install github.com/amitpatole/renvoy/cmd/renvoy@latest`
-will also work.
 
 ## Five-minute quick start
 
