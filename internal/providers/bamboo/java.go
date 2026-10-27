@@ -3,6 +3,7 @@ package bamboo
 import (
 	"context"
 	"fmt"
+	"regexp"
 	"slices"
 	"strings"
 
@@ -42,7 +43,34 @@ func (*JavaProvider) Description() string {
 func (*JavaProvider) Capabilities() providers.CapabilitySet { return capabilities(true) }
 
 // Validate implements providers.Provider.
-func (pr *JavaProvider) Validate(p *pipeline.Pipeline) diagnostics.List { return validate(p, pr, true) }
+func (pr *JavaProvider) Validate(p *pipeline.Pipeline) diagnostics.List {
+	diags := validate(p, pr, true)
+	if diags.HasErrors() {
+		return diags
+	}
+	ext, _ := decode(p, JavaName)
+	_, sizes := planSpec(buildPlan(p, ext), defaultPackage, defaultServerURL, ext.LinkedRepository)
+	for _, c := range sizes {
+		if c.constants <= maxJavaConstants && c.jobCode <= maxJavaCode {
+			continue
+		}
+		path := "stages"
+		for _, j := range p.AllJobs() {
+			if j.Name == c.job {
+				path = j.Path()
+			}
+		}
+		diags = append(diags, diagnostics.Errorf(path, "job %q is too large for Bamboo Java Specs, whose class files hold at most 65,535 constants and 64 KB of code per method", c.job).
+			WithHint("split the job, or use the bamboo provider (YAML Specs)").WithProvider(JavaName))
+	}
+	return diags
+}
+
+// Limits with headroom below the class file maximums of 65,535.
+const (
+	maxJavaConstants = 60000
+	maxJavaCode      = 50000
+)
 
 // Render implements providers.Provider.
 func (pr *JavaProvider) Render(_ context.Context, p *pipeline.Pipeline, _ providers.RenderOptions) ([]providers.GeneratedFile, error) {
@@ -63,11 +91,12 @@ func (pr *JavaProvider) Render(_ context.Context, p *pipeline.Pipeline, _ provid
 		server = defaultServerURL
 	}
 	pl := buildPlan(p, ext)
+	spec, _ := planSpec(pl, pkg, server, ext.LinkedRepository)
 	dir := "bamboo-specs/src/%s/java/" + strings.ReplaceAll(pkg, ".", "/") + "/"
 	return []providers.GeneratedFile{
 		{Path: "bamboo-specs/pom.xml", Content: []byte(pom(pkg, p.Metadata.Name, version)),
 			Comment: providers.CommentXML, CommentEnd: providers.CommentXMLEnd},
-		{Path: fmt.Sprintf(dir, "main") + "PlanSpec.java", Content: []byte(planSpec(pl, pkg, server, ext.LinkedRepository)),
+		{Path: fmt.Sprintf(dir, "main") + "PlanSpec.java", Content: []byte(spec),
 			Comment: providers.CommentSlash},
 		{Path: fmt.Sprintf(dir, "test") + "PlanSpecTest.java", Content: []byte(planSpecTest(pkg)),
 			Comment: providers.CommentSlash},
@@ -173,7 +202,10 @@ func chain(head string, methods ...code) code {
 	return out
 }
 
-type javaWriter struct{ imports map[string]bool }
+type javaWriter struct {
+	imports map[string]bool
+	classes []classSize
+}
 
 func (w *javaWriter) use(classes ...string) {
 	for _, c := range classes {
@@ -252,7 +284,8 @@ func (w *javaWriter) key(k string) string {
 
 func (w *javaWriter) body(s string) code {
 	lines := strings.Split(s, "\n")
-	if len(lines) == 1 {
+	// Each line costs bytecode, so long scripts are one (chunked) literal.
+	if len(lines) == 1 || len(lines) > maxScriptLines {
 		return code{jstr(s)}
 	}
 	out := code{"String.join(\"\\n\","}
@@ -268,14 +301,20 @@ func (w *javaWriter) body(s string) code {
 	return out
 }
 
-func (w *javaWriter) task(t task) code {
+// maxScriptLines is the longest script rendered one line per argument.
+const maxScriptLines = 1000
+
+// task renders a task builder and returns it with its Java type.
+func (w *javaWriter) task(t task) (code, string) {
 	var c code
+	typ := "ScriptTask"
 	switch t.Kind {
 	case taskCheckout:
 		w.use("com.atlassian.bamboo.specs.builders.task.VcsCheckoutTask")
-		return code{"new VcsCheckoutTask().addCheckoutOfDefaultRepository()"}
+		return code{"new VcsCheckoutTask().addCheckoutOfDefaultRepository()"}, "VcsCheckoutTask"
 	case taskJUnit:
 		w.use("com.atlassian.bamboo.specs.builders.task.TestParserTask")
+		typ = "TestParserTask"
 		c = chain("TestParserTask.createJUnitParserTask()", method("resultDirectories", code{jstr(t.Results)}))
 	default:
 		w.use("com.atlassian.bamboo.specs.builders.task.ScriptTask")
@@ -304,10 +343,98 @@ func (w *javaWriter) task(t task) code {
 		}
 		c = append(c, indent(method("conditions", conds...))...)
 	}
-	return c
+	return c, typ
 }
 
-func (w *javaWriter) job(j *job) code {
+// jobClass renders a job as a nested class: job() builds it and each task has
+// its own method. A class has its own constant pool and each method its own
+// 64 KB of bytecode, so a plan's size is limited per job and per task rather
+// than as a whole.
+func (w *javaWriter) jobClass(j *job, class string) code {
+	var methods []code
+	var tasks, final []code
+	add := func(t task) code {
+		body, typ := w.task(t)
+		name := fmt.Sprintf("task%d", len(methods)+1)
+		methods = append(methods, javaMethod("static "+typ+" "+name+"()", body))
+		return code{name + "()"}
+	}
+	for _, t := range j.Tasks {
+		tasks = append(tasks, add(t))
+	}
+	for _, t := range j.FinalTasks {
+		final = append(final, add(t))
+	}
+	// A call with thousands of arguments exceeds 64 KB of bytecode, so long
+	// task lists are built in groups; Job.tasks and finalTasks append.
+	var groups []code
+	group := func(prefix string, calls []code) []code {
+		if len(calls) <= maxTaskArgs {
+			return calls
+		}
+		w.use("com.atlassian.bamboo.specs.api.builders.task.Task")
+		var refs []code
+		for start := 0; start < len(calls); start += maxTaskArgs {
+			name := fmt.Sprintf("%s%d", prefix, len(refs)+1)
+			elems := code{"new Task<?, ?>[] {"}
+			for _, c := range calls[start:min(start+maxTaskArgs, len(calls))] {
+				elems = append(elems, step+c[0]+",")
+			}
+			elems = append(elems, "}")
+			groups = append(groups, javaMethod("static Task<?, ?>[] "+name+"()", elems))
+			refs = append(refs, code{name + "()"})
+		}
+		return refs
+	}
+	tasks, final = group("tasks", tasks), group("finalTasks", final)
+	out := code{"static final class " + class + " {"}
+	out = append(out, javaMethod("static Job job()", w.job(j, tasks, final))...)
+	for _, m := range append(groups, methods...) {
+		out = append(out, "")
+		out = append(out, m...)
+	}
+	out = append(out, "}")
+	w.classes = append(w.classes, classSize{job: j.Name, constants: constantEstimate(out, len(methods)+len(groups)+1),
+		jobCode: 200 + 8*(len(tasks)+len(final)) + 12*len(j.Requirements) + 48*len(j.Artifacts) + 24*len(j.Subscriptions)})
+	return out
+}
+
+// maxTaskArgs is the most tasks passed to one Job.tasks call.
+const maxTaskArgs = 1000
+
+// classSize estimates how close a job class is to the class file limits.
+type classSize struct {
+	job       string
+	constants int // constant pool entries; the limit is 65535
+	jobCode   int // bytecode bytes of job(); the limit is 65535
+}
+
+var javaLiteralRe = regexp.MustCompile(`"(?:[^"\\]|\\.)*"`)
+
+// constantEstimate over-counts the constant pool entries of a class: two per
+// distinct string literal and three per method, plus the classes and methods
+// of the Bamboo Specs API it uses.
+func constantEstimate(src code, methods int) int {
+	literals := map[string]bool{}
+	for _, l := range src {
+		for _, lit := range javaLiteralRe.FindAllString(l, -1) {
+			literals[lit] = true
+		}
+	}
+	return 1000 + 2*len(literals) + 3*methods
+}
+
+// javaMethod renders a method returning expr, indented one level.
+func javaMethod(signature string, expr code) code {
+	out := code{"    " + signature + " {", "        return " + expr[0]}
+	for _, l := range expr[1:] {
+		out = append(out, "        "+l)
+	}
+	out[len(out)-1] += ";"
+	return append(out, "    }")
+}
+
+func (w *javaWriter) job(j *job, tasks, final []code) code {
 	w.use("com.atlassian.bamboo.specs.api.builders.plan.Job")
 	var ms []code
 	if j.Image != "" {
@@ -330,20 +457,20 @@ func (w *javaWriter) job(j *job) code {
 		}
 		ms = append(ms, method("requirements", reqs...))
 	}
-	var tasks []code
-	for _, t := range j.Tasks {
-		tasks = append(tasks, w.task(t))
+	// Grouped task lists pass one array per call.
+	calls := func(name string, args []code, grouped bool) {
+		switch {
+		case len(args) == 0:
+		case grouped:
+			for _, a := range args {
+				ms = append(ms, method(name, a))
+			}
+		default:
+			ms = append(ms, method(name, args...))
+		}
 	}
-	if len(tasks) > 0 {
-		ms = append(ms, method("tasks", tasks...))
-	}
-	var final []code
-	for _, t := range j.FinalTasks {
-		final = append(final, w.task(t))
-	}
-	if len(final) > 0 {
-		ms = append(ms, method("finalTasks", final...))
-	}
+	calls("tasks", tasks, len(j.Tasks) > maxTaskArgs)
+	calls("finalTasks", final, len(j.FinalTasks) > maxTaskArgs)
 	if len(j.Artifacts) > 0 {
 		w.use("com.atlassian.bamboo.specs.api.builders.plan.artifact.Artifact")
 		var arts []code
@@ -367,7 +494,7 @@ func (w *javaWriter) job(j *job) code {
 	return chain("new Job("+jstr(j.Name)+", "+w.key(j.Key)+")", ms...)
 }
 
-func planSpec(pl *plan, pkg, server, repo string) string {
+func planSpec(pl *plan, pkg, server, repo string) (string, []classSize) {
 	w := &javaWriter{imports: map[string]bool{}}
 	w.use("com.atlassian.bamboo.specs.api.BambooSpec",
 		"com.atlassian.bamboo.specs.api.builders.plan.Plan",
@@ -413,7 +540,7 @@ func planSpec(pl *plan, pkg, server, repo string) string {
 		ms = append(ms, method("planBranchManagement",
 			chain("new PlanBranchManagement()", create, code{".triggerBuildsLikeParentPlan()"})))
 	}
-	var stages []code
+	var stages, classes []code
 	w.use("com.atlassian.bamboo.specs.api.builders.plan.Stage")
 	usesConditions := false
 	for _, s := range pl.Stages {
@@ -423,7 +550,9 @@ func planSpec(pl *plan, pkg, server, repo string) string {
 		}
 		var jobs []code
 		for _, j := range s.Jobs {
-			jobs = append(jobs, w.job(j))
+			class := fmt.Sprintf("J%d", len(classes)+1)
+			classes = append(classes, w.jobClass(j, class))
+			jobs = append(jobs, code{class + ".job()"})
 			for _, t := range append(append([]task{}, j.Tasks...), j.FinalTasks...) {
 				usesConditions = usesConditions || len(t.Branches) > 0
 			}
@@ -469,11 +598,21 @@ func planSpec(pl *plan, pkg, server, repo string) string {
 		fmt.Fprintf(&b, "                .configuration(Map.of(\"variable\", %s, \"operation\", \"equals\", \"value\", branch));\n", jstr(branchVariable))
 		b.WriteString("    }\n")
 	}
+	for _, c := range classes {
+		b.WriteString("\n")
+		for _, l := range c {
+			if l == "" {
+				b.WriteString("\n")
+			} else {
+				b.WriteString("    " + l + "\n")
+			}
+		}
+	}
 	b.WriteString("\n")
 	b.WriteString(render.CustomBlockWith(providers.CommentSlash, "    ",
 		"    Plan customize(Plan plan) {",
 		"        return plan;",
 		"    }"))
 	b.WriteString("}\n")
-	return b.String()
+	return b.String(), w.classes
 }

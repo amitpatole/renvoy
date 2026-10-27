@@ -54,7 +54,7 @@ func (*Provider) Capabilities() providers.CapabilitySet {
 		providers.CapabilityInfo{ID: providers.CapRetries, Support: providers.Unsupported,
 			Note: "GitHub Actions cannot retry jobs; retry inside the step script or remove retries"},
 		providers.CapabilityInfo{ID: providers.CapTestResults, Support: providers.Emulated,
-			Note: "uploaded as an artifact named test-results-<job>; GitHub has no built-in test report view"},
+			Note: "uploaded as an artifact named test-results-<job> (.2, .3 for later steps); GitHub has no built-in test report view"},
 		providers.CapabilityInfo{ID: providers.CapImageBuild, Support: providers.Emulated, Note: "runs the docker CLI"},
 		providers.CapabilityInfo{ID: providers.CapImagePush, Support: providers.Emulated, Note: "runs the docker CLI"},
 		providers.CapabilityInfo{ID: providers.CapKubernetesDeploy, Support: providers.Emulated, Note: "runs kubectl apply"},
@@ -188,10 +188,23 @@ func (pr *Provider) Validate(p *pipeline.Pipeline) diagnostics.List {
 			}
 		}
 	}
+	publishes := false
 	for _, j := range p.AllJobs() {
+		for _, s := range j.Steps {
+			publishes = publishes || s.Kind() == pipeline.StepPublishTestResults
+		}
+	}
+	for _, j := range p.AllJobs() {
+		for _, s := range j.Steps {
+			if publishes && s.Kind() == pipeline.StepUploadArtifact && strings.HasPrefix(s.UploadArtifact.Name, testResultsPrefix) {
+				add(diagnostics.Errorf(s.Path()+".uploadArtifact.name", "artifact names starting with %q are reserved for test results on GitHub Actions", testResultsPrefix).
+					WithHint("rename the artifact; GitHub requires artifact names to be unique in a workflow run"))
+			}
+		}
 		if j.Container != nil {
 			for _, opt := range strings.Fields(j.Container.Options) {
-				name, _, _ := strings.Cut(opt, "=")
+				// Quotes may be removed before Docker reads the option, so ignore them.
+				name, _, _ := strings.Cut(strings.NewReplacer(`"`, "", "'", "").Replace(opt), "=")
 				if name == "--network" || name == "--net" || name == "--entrypoint" {
 					add(diagnostics.Errorf(j.Path()+".container.options", "GitHub Actions does not support the %s container option", name).
 						WithHint("remove it; GitHub sets the container network and entrypoint itself"))
@@ -582,6 +595,32 @@ func bindings(s *pipeline.Step) []pipeline.Var {
 	return out
 }
 
+// testResultsPrefix starts the names of artifacts holding test results.
+const testResultsPrefix = "test-results-"
+
+// testResultsName names the artifact of a publishTestResults step. Artifact
+// names must be unique in a run, so later steps of a job and matrix legs add
+// suffixes after a dot, which job names cannot contain.
+func testResultsName(j *pipeline.Job, s *pipeline.Step) string {
+	name := testResultsPrefix + j.Name
+	n := 0
+	for _, st := range j.Steps {
+		if st.Kind() == pipeline.StepPublishTestResults {
+			n++
+		}
+		if st == s {
+			break
+		}
+	}
+	if n > 1 {
+		name += fmt.Sprintf(".%d", n)
+	}
+	if len(j.Matrix) > 0 {
+		name += ".${{ strategy.job-index }}"
+	}
+	return name
+}
+
 func (r *renderer) step(j *pipeline.Job, s *pipeline.Step) *shared.Map {
 	m := shared.NewMap()
 	kind := s.Kind()
@@ -631,10 +670,7 @@ func (r *renderer) step(j *pipeline.Job, s *pipeline.Step) *shared.Map {
 			Set("name", s.DownloadArtifact.Name).
 			Set("path", shared.UploadRoot(a.Step.UploadArtifact.Paths)))
 	case pipeline.StepPublishTestResults:
-		name := "test-results-" + j.Name
-		if len(j.Matrix) > 0 {
-			name += "-${{ strategy.job-index }}"
-		}
+		name := testResultsName(j, s)
 		m.Set("uses", actionUpload)
 		m.Set("with", shared.NewMap().
 			Set("name", name).

@@ -164,6 +164,14 @@ func (pr *Provider) Validate(p *pipeline.Pipeline) diagnostics.List {
 	diags = append(diags, extDiags...)
 	add := func(d diagnostics.Diagnostic) { diags = append(diags, d.WithProvider(Name)) }
 
+	for i, sc := range p.Triggers.Schedules {
+		// Jenkins fires only when both day fields match; cron fires when either does.
+		if f := strings.Fields(sc.Cron); len(f) == 5 && f[2] != "*" && f[4] != "*" {
+			add(diagnostics.Errorf(pipeline.JoinIndex("triggers.schedules", i)+".cron",
+				"Jenkins runs %q only on days matching both the day of month and the day of week, where cron runs on days matching either", sc.Cron).
+				WithHint("restrict either the day of month or the day of week, and use a second schedule for the other"))
+		}
+	}
 	if len(p.Secrets) > 0 {
 		add(diagnostics.Infof("secrets", "create Jenkins secret text credentials with the IDs %s", strings.Join(p.Secrets, ", ")))
 	}

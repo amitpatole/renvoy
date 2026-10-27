@@ -82,7 +82,7 @@ This section is generated from the provider code by
 - `triggers.schedules` (native): scheduled workflows run on the repository's default branch only
 - `jobs.retries` (unsupported): GitHub Actions cannot retry jobs; retry inside the step script or remove retries
 - `steps.uses` (native): references must be GitHub actions: owner/repo@ref, owner/repo/path@ref, ./path, or docker://image
-- `steps.publishTestResults` (emulated): uploaded as an artifact named test-results-<job>; GitHub has no built-in test report view
+- `steps.publishTestResults` (emulated): uploaded as an artifact named test-results-<job> (.2, .3 for later steps); GitHub has no built-in test report view
 - `steps.buildImage` (emulated): runs the docker CLI
 - `steps.pushImage` (emulated): runs the docker CLI
 - `steps.deployKubernetes` (emulated): runs kubectl apply
@@ -297,7 +297,11 @@ GitLab `artifacts:when: always`, Azure `succeededOrFailed()`, Jenkins
   artifacts (actions/upload-artifact); a workflow over 500 KB, counting any
   custom block already in the file, is an error, since GitHub does not start
   runs from it. The `--network`, `--net`, and `--entrypoint` container options
-  are an error, since GitHub does not support them. Timeouts over 360 minutes warn
+  are an error, since GitHub does not support them. Artifact names must be
+  unique in a run, so test result artifacts are named `test-results-<job>`,
+  then `.2`, `.3` for later steps and `.<leg>` in matrix jobs; when a pipeline
+  publishes test results, `uploadArtifact` names starting with `test-results-`
+  are an error. Timeouts over 360 minutes warn
   on GitHub and Azure, whose hosted runners stop jobs after 6 hours.
 - **Bamboo password variables.** Bamboo treats variables whose names contain
   `password`, `secret`, `passphrase`, or `sshkey` as passwords and refuses
@@ -311,8 +315,17 @@ GitLab `artifacts:when: always`, Azure `succeededOrFailed()`, Jenkins
   a Java regular expression, so it must be one Renvoy can confirm Bamboo
   accepts: literals, `.`, `^`, `$`, `|`, `(...)`, `(?:...)`, `(?=...)`,
   `(?!...)`, inline flags such as `(?i)`, `[a-z]` classes, and `*`, `+`, `?`,
-  `{n,m}` after an atom. Lookbehind, nested classes, and a literal `{` are not
-  accepted.
+  `{n,m}` after an atom, in at most 255 characters and 32 nested groups.
+  Lookbehind, nested classes, the `x` (comments) flag, and a literal `{` are
+  not accepted. Job keys are at most 40 characters.
+- **Bamboo Java Specs size.** Java limits a class to 65,535 constants and a
+  method to 64 KB of code. Renvoy puts each job in its own nested class and
+  each task in its own method, and reports an error for a job that would still
+  exceed the limits (for example, thousands of requirements); split the job or
+  use the `bamboo` provider.
+- **Jenkins schedules** that restrict both the day of month and the day of week
+  are an error: Jenkins runs them only on days matching both fields, while
+  cron, GitHub, GitLab, and Azure run them on days matching either.
 - **Azure deployment jobs.** Azure does not accept `deploy` as a deployment job
   name, so that job is named `deploy_` in Azure; environment names with a dot
   are an error, since Azure reads `prod.eu` as environment `prod`, resource

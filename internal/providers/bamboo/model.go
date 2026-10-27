@@ -598,8 +598,9 @@ func jobKeys(p *pipeline.Pipeline) map[*pipeline.Job]string {
 	used := map[string]bool{}
 	for _, j := range p.AllJobs() {
 		base := strings.ToUpper(strings.ReplaceAll(j.Name, "-", ""))
-		if len(base) > 40 {
-			base = base[:40]
+		// Keys are at most 40 characters, leaving room for a numeric suffix.
+		if len(base) > 36 {
+			base = base[:36]
 		}
 		if len(base) < 2 {
 			base += "JOB"

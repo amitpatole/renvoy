@@ -194,3 +194,15 @@ All notable changes to this project are documented here. The format follows
   (unbalanced brackets or `${...}` failed plan import), and Bamboo Java Specs
   split strings over the 65,535-byte class-file constant limit, which javac
   refused to compile.
+- Bamboo Java Specs put each job in a nested class and each task in its own
+  method, so plans within Renvoy's limits no longer fail javac with "code too
+  large"; a job that would still exceed Java's class limits is an error. GitHub
+  test result artifacts get unique names per step and matrix leg (a second
+  upload with the same name failed the job), and user artifacts may not use the
+  `test-results-` prefix. Jenkins schedules that restrict both the day of month
+  and the day of week are an error, since Jenkins requires both to match.
+  Bamboo requirement match values may not use the `x` flag (which changes how
+  `#` and spaces parse) and are limited to 255 characters and 32 nested groups
+  (deeper patterns overflowed Java's stack); job keys stay within 40
+  characters; quoted `--network` and `--entrypoint` options are rejected on
+  GitHub.

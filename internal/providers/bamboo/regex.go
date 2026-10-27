@@ -3,12 +3,18 @@ package bamboo
 // matchRegexOK reports whether a requirement match value is a regular
 // expression Bamboo's java.util.regex accepts. It is deliberately stricter
 // than Java: it accepts literals, ., ^, $, alternation, (...), (?:...),
-// (?=...), (?!...), inline flags such as (?i), simple character classes with
-// ranges, and the *, +, ?, {n}, {n,}, {n,m} quantifiers with an optional lazy
-// or possessive suffix. Requirement values cannot contain backslashes, so no
-// escapes are handled.
+// (?=...), (?!...), inline flags such as (?i) (but not x), simple character
+// classes with ranges, and the *, +, ?, {n}, {n,}, {n,m} quantifiers with an
+// optional lazy or possessive suffix, in at most 255 characters and 32 nested
+// groups. Requirement values cannot contain backslashes, so no escapes are
+// handled.
 func matchRegexOK(s string) bool {
 	rs := []rune(s)
+	// Java compiles patterns recursively, so long or deeply nested ones
+	// overflow its stack.
+	if len(rs) > maxMatchLength {
+		return false
+	}
 	depth := 0
 	atom := false       // the previous token can take a quantifier
 	quantified := false // the previous token is a quantifier without a suffix
@@ -35,6 +41,9 @@ func matchRegexOK(s string) bool {
 				}
 			}
 			depth++
+			if depth > maxMatchDepth {
+				return false
+			}
 			atom, quantified = false, false
 		case ')':
 			if depth == 0 {
@@ -77,7 +86,14 @@ func matchRegexOK(s string) bool {
 	return depth == 0
 }
 
-func isFlag(r rune) bool { return r == 'i' || r == 'm' || r == 's' || r == 'u' || r == 'x' || r == 'd' }
+// isFlag excludes x (comments mode), which changes how # and spaces parse.
+// Bounds on requirement match values.
+const (
+	maxMatchLength = 255
+	maxMatchDepth  = 32
+)
+
+func isFlag(r rune) bool { return r == 'i' || r == 'm' || r == 's' || r == 'u' || r == 'd' }
 
 // repeat parses {n}, {n,} or {n,m} starting at rs[i] == '{' and returns the
 // index of the closing brace.

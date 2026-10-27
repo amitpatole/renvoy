@@ -588,3 +588,72 @@ func TestBambooJavaSplitsLongStrings(t *testing.T) {
 		}
 	}
 }
+
+func TestRound20ProviderRules(t *testing.T) {
+	steps := func(s string) string {
+		return strings.Replace(round14Base, "        steps: [{run: echo MARKER}]\n", "        steps:\n"+s, 1)
+	}
+	two := steps("          - publishTestResults: {path: r/a.xml}\n          - publishTestResults: {path: r/b.xml}\n")
+	if out := render19(t, "github-actions", two); !strings.Contains(out, "name: test-results-j\n") || !strings.Contains(out, "name: test-results-j.2\n") {
+		t.Errorf("test result artifacts are not unique:\n%s", out)
+	}
+	clash := steps("          - uploadArtifact: {name: test-results-j, paths: [dist/]}\n          - publishTestResults: {path: r/a.xml}\n")
+	if d := round14(t, "github-actions", clash); !hasDiag(d, diagnostics.Error, "stages[0].jobs[0].steps[0].uploadArtifact.name", "reserved for test results") {
+		t.Errorf("github reserved artifact name: %v", d)
+	}
+	for _, opts := range []string{`'--network' host`, `\"--entrypoint\"=sh`} {
+		src := strings.Replace(round14Base, "        steps:", "        container: {image: alpine, options: \""+opts+"\"}\n        steps:", 1)
+		if d := round14(t, "github-actions", src); !hasDiag(d, diagnostics.Error, "stages[0].jobs[0].container.options", "does not support") {
+			t.Errorf("github quoted options %q: %v", opts, d)
+		}
+	}
+	for cron, ok := range map[string]bool{"0 3 1 * 1": false, "0 3 1-5/2 * 1-5": false, "0 3 1 * *": true, "0 3 * * 1": true} {
+		src := strings.Replace(round14Base, "push: {}", "schedules: [{cron: \""+cron+"\", branches: [main]}]", 1)
+		if got := !hasDiag(round14(t, "jenkins", src), diagnostics.Error, "triggers.schedules[0].cron", "both the day of month"); got != ok {
+			t.Errorf("jenkins cron %q: accepted=%v, want %v", cron, got, ok)
+		}
+	}
+	for req, ok := range map[string]bool{"k=(?i)a": true, "k=(?x)(a#)": false, "k=(?x) *": false,
+		"k=" + strings.Repeat("a", 256): false, "k=" + strings.Repeat("(", 33) + "a" + strings.Repeat(")", 33): false,
+		"k=" + strings.Repeat("(", 32) + "a" + strings.Repeat(")", 32): true} {
+		src := strings.Replace(round14Base, "planKey: PLAN}", "planKey: PLAN, requirements: {linux: [\""+req+"\"]}}", 1)
+		if got := !hasDiag(round14(t, "bamboo", src), diagnostics.Error, "extensions.bamboo.requirements.linux[0]", "regular expression"); got != ok {
+			t.Errorf("bamboo requirement %.40q: accepted=%v, want %v", req, got, ok)
+		}
+	}
+}
+
+func TestBambooJobKeysFitInForty(t *testing.T) {
+	long := strings.Repeat("j", 61)
+	src := strings.Replace(round14Base, "      - name: j\n        steps: [{run: echo MARKER}]\n",
+		"      - name: "+long+"a\n        steps: [{run: echo MARKER}]\n      - name: "+long+"b\n        steps: [{run: echo MARKER}]\n", 1)
+	out := render19(t, "bamboo-java", src)
+	keys := regexp.MustCompile(`new BambooKey\("([A-Z0-9]+)"\)`).FindAllStringSubmatch(out, -1)
+	if len(keys) < 4 {
+		t.Fatalf("keys %v", keys)
+	}
+	for _, k := range keys {
+		if len(k[1]) > 40 {
+			t.Errorf("key %q is longer than 40 characters", k[1])
+		}
+	}
+}
+
+func TestBambooJavaStaysWithinClassLimits(t *testing.T) {
+	var many strings.Builder
+	for i := 0; i < 1100; i++ {
+		fmt.Fprintf(&many, "          - run: echo MARKER %d\n", i)
+	}
+	src := strings.Replace(round14Base, "        steps: [{run: echo MARKER}]\n", "        steps:\n"+many.String(), 1)
+	if out := render19(t, "bamboo-java", src); !strings.Contains(out, ".tasks(tasks2())") || !strings.Contains(out, "static ScriptTask task1100()") {
+		t.Error("long task lists are not grouped")
+	}
+	var reqs []string
+	for i := 0; i < 6000; i++ {
+		reqs = append(reqs, fmt.Sprintf("cap%d=v%d", i, i))
+	}
+	src = strings.Replace(round14Base, "planKey: PLAN}", "planKey: PLAN, requirements: {linux: ["+strings.Join(reqs, ", ")+"]}}", 1)
+	if d := round14(t, "bamboo-java", src); !hasDiag(d, diagnostics.Error, "stages[0].jobs[0]", "too large for Bamboo Java Specs") {
+		t.Errorf("oversized job: %v", d)
+	}
+}
