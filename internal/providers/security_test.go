@@ -691,3 +691,17 @@ func TestRound21ProviderRules(t *testing.T) {
 		t.Errorf("github raw upload-artifact: %v", d)
 	}
 }
+
+func TestRound22ReservedArtifactInputs(t *testing.T) {
+	for _, c := range []struct{ uses, with, key string }{
+		{"actions/upload-artifact@v4", "{NAME: test-results-j, path: x}", "NAME"},
+		{"actions/upload-artifact/merge@v4", "{new-name: test-results-j}", "new-name"},
+		{"actions/upload-artifact@v4", "{name: \" Test-Results-j\", path: x}", "name"},
+	} {
+		src := strings.Replace(round14Base, "        steps: [{run: echo MARKER}]\n",
+			"        steps:\n          - uses: "+c.uses+"\n            with: "+c.with+"\n          - publishTestResults: {path: r/a.xml}\n", 1)
+		if d := round14(t, "github-actions", src); !hasDiag(d, diagnostics.Error, "stages[0].jobs[0].steps[0].with."+c.key, "reserved for test results") {
+			t.Errorf("%s %s: %v", c.uses, c.with, d)
+		}
+	}
+}

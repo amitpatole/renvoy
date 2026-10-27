@@ -2,6 +2,10 @@ warning renvoy.yaml:20:3 extensions.circleci:
   unknown extension namespace "circleci" is ignored by every provider
   hint: known namespaces: github-actions, gitlab, azure-devops, jenkins, bamboo, bamboo-java
 
+warning renvoy.yaml:47:24 stages[0].jobs[0].steps[4].when.events[0]:
+  event "schedule" never happens because the pipeline has no triggers.schedules
+  hint: add triggers.schedules or remove the event
+
 error [azure-devops] renvoy.yaml:27:9 stages[0].jobs[0].retries:
   Azure DevOps Pipelines cannot express jobs.retries
   hint: Azure Pipelines cannot retry jobs; retry inside the step script or remove retries

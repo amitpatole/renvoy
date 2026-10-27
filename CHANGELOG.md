@@ -214,3 +214,10 @@ All notable changes to this project are documented here. The format follows
   without plan branches say `create: manually`. Azure `${git.branch}` strips
   `refs/tags/`. GitHub rejects `shell: sh` on Windows and checks raw
   `actions/upload-artifact` steps against the reserved `test-results-` prefix.
+- GitHub matches the reserved `test-results-` prefix against `with` inputs in any
+  case (`NAME:`), the `new-name` input of `actions/upload-artifact/merge`, and
+  names with leading spaces or capitals, which previously slipped past the check.
+  Cron expressions must use single spaces with no leading or trailing space,
+  since GitHub, Azure, and Jenkins copy them as written. Conditions warn when an
+  event has no matching trigger, or when they list branches with only the
+  `pullRequest` event, because such a job can never run.

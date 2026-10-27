@@ -113,8 +113,8 @@ must not be reversed.
   `.`, `_`, `/`, and `-`. `release/*` matches every name starting with
   `release/`, including nested names such as `release/1.2/rc`. Branch conditions
   match branch builds only, never tag or pull request builds.
-- **Cron** expressions separate their five fields with spaces; tabs, newlines,
-  and Unicode spaces are an error.
+- **Cron** expressions separate their five fields with single spaces, with no
+  leading or trailing space; tabs, newlines, and Unicode spaces are an error.
 - `{}` enables a trigger. An empty value (`pullRequest:`) is an error, so a
   forgotten value is never silently ignored.
 
@@ -152,6 +152,15 @@ stages:
 - **Conditions.** `when` holds `branches` and `events`; both must match when both are
   present. Branch conditions match branch builds only, never pull request builds.
   A job whose condition is false is skipped, and so is everything that depends on it.
+  An event with no matching trigger (`manual` without `triggers.manual`) is a
+  warning, and so is a condition listing `branches` with only the `pullRequest`
+  event, since neither can ever match.
+- **Secrets on pull requests.** Providers withhold secrets from pull request
+  builds of forks by default (GitHub passes empty values; Azure does not expose
+  secret variables to fork builds; GitLab runs fork pipelines in the fork's
+  project). Do not rely on secrets in jobs that run for `pullRequest`, and check
+  each provider's fork settings before enabling them.
+- **Artifact retention** is not set by Renvoy; each provider's default applies.
 - **Containers** require a Linux runner.
 - **Matrix** runs the job once per combination (at most 256). Values are referenced as
   `${matrix.<axis>}`. Matrix jobs cannot upload artifacts in `v1alpha1`.

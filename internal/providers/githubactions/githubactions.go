@@ -196,7 +196,7 @@ func (pr *Provider) Validate(p *pipeline.Pipeline) diagnostics.List {
 	}
 	for _, j := range p.AllJobs() {
 		for _, s := range j.Steps {
-			if publishes && s.Kind() == pipeline.StepUploadArtifact && strings.HasPrefix(s.UploadArtifact.Name, testResultsPrefix) {
+			if publishes && s.Kind() == pipeline.StepUploadArtifact && reservedTestResults(s.UploadArtifact.Name) {
 				add(diagnostics.Errorf(s.Path()+".uploadArtifact.name", "artifact names starting with %q are reserved for test results on GitHub Actions", testResultsPrefix).
 					WithHint("rename the artifact; GitHub requires artifact names to be unique in a workflow run"))
 			}
@@ -249,10 +249,15 @@ func (pr *Provider) Validate(p *pipeline.Pipeline) diagnostics.List {
 					add(diagnostics.Errorf(s.Path()+".uses", "%q is not a GitHub action reference", s.Uses).
 						WithHint("use owner/repo@ref, owner/repo/path@ref, ./path, or docker://image"))
 				}
-				if name, _ := s.With.Get("name"); publishes && strings.HasPrefix(strings.ToLower(s.Uses), "actions/upload-artifact@") &&
-					strings.HasPrefix(name, testResultsPrefix) {
-					add(diagnostics.Errorf(pipeline.JoinKey(s.Path()+".with", "name"), "artifact names starting with %q are reserved for test results on GitHub Actions", testResultsPrefix).
-						WithHint("rename the artifact; GitHub requires artifact names to be unique in a workflow run"))
+				// Action inputs are case-insensitive; upload-artifact/merge names its output new-name.
+				if publishes && strings.HasPrefix(strings.ToLower(s.Uses), "actions/upload-artifact") {
+					for _, e := range s.With {
+						key := strings.ToLower(e.Name)
+						if (key == "name" || key == "new-name") && reservedTestResults(e.Value) {
+							add(diagnostics.Errorf(pipeline.JoinKey(s.Path()+".with", e.Name), "artifact names starting with %q are reserved for test results on GitHub Actions", testResultsPrefix).
+								WithHint("rename the artifact; GitHub requires artifact names to be unique in a workflow run"))
+						}
+					}
 				}
 			case pipeline.StepRun:
 				if j.OS() == pipeline.OSWindows && s.ShellFor(j.OS()) == pipeline.ShellSh {
@@ -607,6 +612,11 @@ func bindings(s *pipeline.Step) []pipeline.Var {
 
 // testResultsPrefix starts the names of artifacts holding test results.
 const testResultsPrefix = "test-results-"
+
+// reservedTestResults reports whether an artifact name could collide with a test results artifact.
+func reservedTestResults(name string) bool {
+	return strings.HasPrefix(strings.ToLower(strings.TrimSpace(name)), testResultsPrefix)
+}
 
 // testResultsName names the artifact of a publishTestResults step. Artifact
 // names must be unique in a run, so later steps of a job and matrix legs add

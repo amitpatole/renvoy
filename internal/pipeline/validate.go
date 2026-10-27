@@ -382,6 +382,10 @@ func ValidateCron(expr string) error {
 	if len(fields) != 5 {
 		return fmt.Errorf("cron expression %q must have exactly five fields", expr)
 	}
+	// Providers copy the expression as written, so keep it in the one form all of them read.
+	if strings.Join(fields, " ") != expr {
+		return fmt.Errorf("cron expression %q must separate its fields with single spaces and no leading or trailing space", expr)
+	}
 	limits := [5][2]int{{0, 59}, {0, 23}, {1, 31}, {1, 12}, {0, 6}}
 	names := [5]string{"minute", "hour", "day-of-month", "month", "day-of-week"}
 	for i, f := range fields {
@@ -470,11 +474,39 @@ func (v *validator) checkCondition(path string, c *Condition) {
 		v.errorf(path, "condition is empty").Hint = "set branches or events, or remove when"
 	}
 	v.checkPatterns(path+".branches", c.Branches)
+	t := v.p.Triggers
 	for i, e := range c.Events {
-		if !slices.Contains(Events, e) {
+		var trigger string
+		switch e {
+		case EventPush:
+			if t.Push == nil {
+				trigger = "triggers.push"
+			}
+		case EventPullRequest:
+			if t.PullRequest == nil {
+				trigger = "triggers.pullRequest"
+			}
+		case EventManual:
+			if t.Manual == nil {
+				trigger = "triggers.manual"
+			}
+		case EventSchedule:
+			if len(t.Schedules) == 0 {
+				trigger = "triggers.schedules"
+			}
+		default:
 			v.errorf(JoinIndex(path+".events", i), "unknown event %q", e).
 				Hint = "use one of " + strings.Join(Events, ", ")
+			continue
 		}
+		if trigger != "" {
+			v.add(diagnostics.Warningf(JoinIndex(path+".events", i), "event %q never happens because the pipeline has no %s", e, trigger).
+				WithHint("add %s or remove the event", trigger))
+		}
+	}
+	if len(c.Branches) > 0 && len(c.Events) > 0 && !slices.ContainsFunc(c.Events, func(e string) bool { return e != EventPullRequest }) {
+		v.add(diagnostics.Warningf(path, "condition never matches: branch conditions match branch builds only, never pull request builds").
+			WithHint("remove branches, or add another event"))
 	}
 }
 

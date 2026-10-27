@@ -596,3 +596,44 @@ func TestRound21CronWhitespace(t *testing.T) {
 		expectError(t, diags, "triggers.schedules[0].cron", "separate its fields with spaces")
 	}
 }
+
+func TestRound22CronSingleSpaces(t *testing.T) {
+	for _, cron := range []string{" 0 3 * * *", "0 3 * * * ", "0  3 * * *"} {
+		src := strings.Replace(minimal, "push: {}", "schedules: [{cron: \""+cron+"\", branches: [main]}]", 1)
+		_, diags := parse(t, src)
+		expectError(t, diags, "triggers.schedules[0].cron", "single spaces")
+	}
+}
+
+func TestRound22DeadConditions(t *testing.T) {
+	warns := func(src, path, msg string) bool {
+		_, diags := parse(t, src)
+		for _, d := range diags {
+			if d.Severity == diagnostics.Warning && d.Path == path && strings.Contains(d.Message, msg) {
+				return true
+			}
+		}
+		return false
+	}
+	job := func(when string) string {
+		return strings.Replace(minimal, "        steps:", "        when: "+when+"\n        steps:", 1)
+	}
+	for _, c := range []struct{ event, trigger string }{
+		{"manual", "triggers.manual"}, {"schedule", "triggers.schedules"}, {"pullRequest", "triggers.pullRequest"},
+	} {
+		if !warns(job("{events: ["+c.event+"]}"), "stages[0].jobs[0].when.events[0]", "no "+c.trigger) {
+			t.Errorf("event %s without its trigger is not reported", c.event)
+		}
+	}
+	if warns(job("{events: [push]}"), "stages[0].jobs[0].when.events[0]", "never happens") {
+		t.Error("push event with a push trigger is reported")
+	}
+	pr := strings.Replace(job("{branches: [main], events: [pullRequest]}"), "push: {}", "pullRequest: {}", 1)
+	if !warns(pr, "stages[0].jobs[0].when", "never matches") {
+		t.Error("pull-request-only condition with branches is not reported")
+	}
+	mixed := strings.Replace(job("{branches: [main], events: [push, pullRequest]}"), "push: {}", "push: {}\n  pullRequest: {}", 1)
+	if warns(mixed, "stages[0].jobs[0].when", "never matches") {
+		t.Error("condition with a push event is reported as never matching")
+	}
+}

@@ -330,11 +330,15 @@ GitLab `artifacts:when: always`, Azure `succeededOrFailed()`, Jenkins
 - **Jenkins branch conditions** add `not { buildingTag() }` and
   `not { changeRequest() }`, because Jenkins sets `BRANCH_NAME` for tag and pull
   request builds too (`PR-12`, `v1.0`).
+- **Jenkins events.** The `push` event matches any build that is not a pull
+  request, a manual (user) build, or a timer build, so upstream and remote
+  triggers count as `push`.
 - **`${git.branch}` on tag builds** is the tag name on every provider; Azure
   strips both `refs/heads/` and `refs/tags/`.
 - **GitHub on Windows** rejects `shell: sh`, which GitHub supports only on Linux
   and macOS runners. A raw `actions/upload-artifact` step is checked against the
-  `test-results-` names too.
+  `test-results-` names too, in any input case and including the `new-name` of
+  `actions/upload-artifact/merge`.
 - **Jenkins schedules** that restrict both the day of month and the day of week
   are an error: Jenkins runs them only on days matching both fields, while
   cron, GitHub, GitLab, and Azure run them on days matching either.
