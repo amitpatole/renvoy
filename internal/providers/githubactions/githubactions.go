@@ -188,6 +188,23 @@ func (pr *Provider) Validate(p *pipeline.Pipeline) diagnostics.List {
 			}
 		}
 	}
+	for i, s := range p.Triggers.Schedules {
+		if minGap(pipeline.CronMinutes(s.Cron)) < 5 {
+			add(diagnostics.Warningf(pipeline.JoinIndex("triggers.schedules", i)+".cron",
+				"GitHub runs scheduled workflows at most once every 5 minutes, so %q fires less often than written", s.Cron))
+		}
+	}
+	for _, j := range p.AllJobs() {
+		uploads := 0
+		for _, s := range j.Steps {
+			if s.UploadArtifact != nil {
+				uploads++
+			}
+		}
+		if uploads > maxJobArtifacts {
+			add(diagnostics.Errorf(j.Path()+".steps", "the job uploads %d artifacts; actions/upload-artifact allows at most %d per job", uploads, maxJobArtifacts))
+		}
+	}
 	for i := range p.Triggers.Schedules {
 		add(diagnostics.Warningf(pipeline.JoinIndex("triggers.schedules", i),
 			"GitHub runs scheduled workflows only on the default branch; the branches list is not enforced").
@@ -648,4 +665,28 @@ func sortedKeys[V any](m map[string]V) []string {
 	}
 	sort.Strings(keys)
 	return keys
+}
+
+// maxJobArtifacts is actions/upload-artifact's limit on artifacts per job.
+const maxJobArtifacts = 500
+
+// minGap returns the shortest interval, in minutes, between firing minutes,
+// counting the wrap into the next hour; 60 when it fires at most hourly.
+func minGap(minutes [60]bool) int {
+	gap, first, prev := 60, -1, -1
+	for m, on := range minutes {
+		if !on {
+			continue
+		}
+		if prev >= 0 {
+			gap = min(gap, m-prev)
+		} else {
+			first = m
+		}
+		prev = m
+	}
+	if first >= 0 && first != prev {
+		gap = min(gap, first+60-prev)
+	}
+	return gap
 }

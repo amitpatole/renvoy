@@ -436,3 +436,32 @@ func TestAzureReservedVariablePrefixes(t *testing.T) {
 		t.Error("github-actions applies the Azure rule")
 	}
 }
+
+// Round 17: GitHub's 5-minute schedule floor and 500 artifacts per job, and
+// Bamboo's refusal of plain-text values in password-like variables.
+func TestRound17ProviderRules(t *testing.T) {
+	sched := func(cron string) string {
+		return strings.Replace(round14Base, "triggers: {push: {}}", "triggers:\n  push: {}\n  schedules: [{cron: \""+cron+"\", branches: [main]}]", 1)
+	}
+	for cron, warn := range map[string]bool{"*/1 * * * *": true, "0-59/2 * * * *": true, "0,58 * * * *": true, "*/5 * * * *": false, "0 3 * * *": false, "0,30 * * * *": false} {
+		d := round14(t, "github-actions", sched(cron))
+		if got := hasDiag(d, diagnostics.Warning, "triggers.schedules[0].cron", "every 5 minutes"); got != warn {
+			t.Errorf("%s: warned=%v, want %v", cron, got, warn)
+		}
+	}
+	var steps strings.Builder
+	for i := 0; i < 501; i++ {
+		fmt.Fprintf(&steps, "          - uploadArtifact: {name: a%d, paths: [dist/]}\n", i)
+	}
+	src := strings.Replace(round14Base, "        steps: [{run: echo MARKER}]\n", "        steps:\n"+steps.String(), 1)
+	if d := round14(t, "github-actions", src); !hasDiag(d, diagnostics.Error, "stages[0].jobs[0].steps", "at most 500") {
+		t.Errorf("501 artifacts: %v", d)
+	}
+	src = strings.Replace(round14Base, "extensions:\n", "variables: {DB_PASSWORD: x, sshKeyFile: y, PLAIN: z}\nextensions:\n", 1)
+	for _, prov := range []string{"bamboo", "bamboo-java"} {
+		d := round14(t, prov, src)
+		if !hasDiag(d, diagnostics.Error, "variables.DB_PASSWORD", "as passwords") || !hasDiag(d, diagnostics.Error, "variables.sshKeyFile", "as passwords") || hasDiag(d, diagnostics.Error, "variables.PLAIN", "as passwords") {
+			t.Errorf("%s: %v", prov, d)
+		}
+	}
+}

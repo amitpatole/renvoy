@@ -171,3 +171,9 @@ All notable changes to this project are documented here. The format follows
   `.`) are rejected: Jenkins' Ant patterns (`./dist/**`) matched no files, so
   archiveArtifacts failed and stash was empty. Values such as `._` and `._5`
   are quoted in generated YAML; SnakeYAML failed on them or read numbers.
+- GitHub warns about schedules more frequent than every 5 minutes and rejects
+  jobs uploading more than 500 artifacts; Bamboo rejects plain-text variables
+  whose names contain password, secret, passphrase, or sshkey, which its spec
+  import refuses; blank `container.options` (Bamboo rejected blank docker run
+  arguments) and paths with control or format characters, or segments ending
+  in `.` or a space, are rejected.

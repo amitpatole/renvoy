@@ -292,6 +292,13 @@ GitLab `artifacts:when: always`, Azure `succeededOrFailed()`, Jenkins
   with `endpoint`, `input`, `secret`, `path`, or `securefile` (in any case) to
   tasks and scripts, so variables, secrets, job `env` names, and matrix axes with
   those prefixes are an error for Azure (for example `SECRET_KEY`, `INPUT_DIR`).
+- **GitHub limits.** Schedules that would fire more often than every 5 minutes
+  warn, since GitHub runs them at most that often; a job may upload at most 500
+  artifacts (actions/upload-artifact).
+- **Bamboo password variables.** Bamboo treats variables whose names contain
+  `password`, `secret`, `passphrase`, or `sshkey` as passwords and refuses
+  plain-text values for them in specs, so such variables are an error for both
+  Bamboo providers; declare them under `secrets`.
 - **GitLab limits.** A job may need at most 50 jobs by default (`ci_max_needs`
   on self-managed instances), so more is a warning; `parallel:matrix` creates
   at most 200 jobs, so a larger matrix is an error.

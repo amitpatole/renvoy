@@ -71,6 +71,8 @@ dependency graph, and naming rules that a schema cannot express.
   which GitHub's artifact and cache actions read as exclusions, comments, or escapes.
   Artifact, cache, and test-result paths also have no `.` or empty segments
   (`dist/`, not `./dist/`), because Jenkins' Ant patterns would match no files.
+  No path contains control or invisible format characters, or a segment ending
+  in `.` or a space, which Windows removes.
 - **Unknown fields are errors**, with the line, column, and a suggestion.
 
 ## Top level

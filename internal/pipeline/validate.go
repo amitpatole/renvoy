@@ -7,6 +7,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"unicode"
 
 	"github.com/amitpatole/renvoy/internal/diagnostics"
 )
@@ -385,6 +386,39 @@ func ValidateCron(expr string) error {
 	return nil
 }
 
+// CronMinutes returns the minutes of the hour a valid cron expression fires at.
+func CronMinutes(expr string) [60]bool {
+	var out [60]bool
+	fields := strings.Fields(expr)
+	if len(fields) != 5 {
+		return out
+	}
+	for _, item := range strings.Split(fields[0], ",") {
+		m := cronItemRe.FindStringSubmatch(item)
+		if m == nil {
+			continue
+		}
+		lo, hi, step := 0, 59, 1
+		if m[1] != "*" {
+			bounds := strings.Split(m[1], "-")
+			lo, _ = strconv.Atoi(bounds[0])
+			hi = lo
+			if len(bounds) == 2 {
+				hi, _ = strconv.Atoi(bounds[1])
+			} else if m[2] != "" {
+				hi = 59
+			}
+		}
+		if m[2] != "" {
+			step, _ = strconv.Atoi(m[2])
+		}
+		for i := lo; i <= hi && i < 60; i += max(step, 1) {
+			out[i] = true
+		}
+	}
+	return out
+}
+
 var cronItemRe = regexp.MustCompile(`^(\*|[0-9]{1,2}(?:-[0-9]{1,2})?)(?:/([0-9]{1,2}))?$`)
 
 // cronItem validates one comma-separated cron item: *, n, a-b, optionally /step.
@@ -472,6 +506,9 @@ func (v *validator) checkJob(path string, j *Job) {
 		}
 		if strings.ContainsAny(j.Container.Options, "\n\r") {
 			v.errorf(cp+".options", "container options must be a single line")
+		} else if j.Container.Options != "" && strings.TrimSpace(j.Container.Options) == "" {
+			// Bamboo refuses blank docker run arguments.
+			v.errorf(cp+".options", "container options must not be blank; remove the field instead")
 		}
 		v.warnProviderSyntax(cp+".image", j.Container.Image)
 		v.warnProviderSyntax(cp+".options", j.Container.Options)
@@ -867,8 +904,16 @@ func ValidateRelPath(s string) error {
 		// a comment, trim lines, and treat \ as a glob escape.
 		return fmt.Errorf("path %q must not start with '!' or '#', contain '\\', or start or end with spaces; separate directories with '/'", s)
 	}
-	if strings.ContainsAny(s, "\n\r\t'\"`$,;|&<>") {
+	if strings.ContainsAny(s, "\n\r\t'\"`$,;|&<>") || strings.ContainsFunc(s, func(r rune) bool {
+		return unicode.IsControl(r) || unicode.Is(unicode.Cf, r) || r == '\u2028' || r == '\u2029'
+	}) {
 		return fmt.Errorf("path %q contains characters that are not portable across providers", s)
+	}
+	for _, part := range strings.Split(s, "/") {
+		// Windows drops trailing dots and spaces from file names.
+		if part != "." && part != ".." && (strings.HasSuffix(part, ".") || strings.HasSuffix(part, " ")) {
+			return fmt.Errorf("path %q has a segment ending in '.' or a space, which Windows removes", s)
+		}
 	}
 	return nil
 }

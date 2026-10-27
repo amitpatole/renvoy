@@ -204,6 +204,18 @@ func validate(p *pipeline.Pipeline, prov providers.Provider, java bool) diagnost
 	diags = append(diags, extDiags...)
 	add := func(d diagnostics.Diagnostic) { diags = append(diags, d.WithProvider(name)) }
 
+	for _, v := range p.Variables {
+		lower := strings.ToLower(v.Name)
+		for _, word := range []string{"password", "secret", "passphrase", "sshkey"} {
+			if strings.Contains(lower, word) {
+				// Bamboo treats such variables as passwords and refuses raw values in specs.
+				add(diagnostics.Errorf(pipeline.JoinKey("variables", v.Name),
+					"Bamboo treats variables whose names contain %q as passwords and refuses plain-text values in specs", word).
+					WithHint("declare it under secrets instead, or rename it"))
+				break
+			}
+		}
+	}
 	if strings.ContainsAny(p.Metadata.Description, forbiddenDescription) {
 		add(diagnostics.Errorf("metadata.description", "Bamboo plan descriptions cannot contain any of %s", forbiddenDescription))
 	}

@@ -1,6 +1,7 @@
 package pipeline_test
 
 import (
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -529,5 +530,30 @@ func TestRound16PatternPaths(t *testing.T) {
 	ok := strings.Replace(minimal, "          - run: make test\n", "          - buildImage: {image: app, context: .}\n          - uploadArtifact: {name: out, paths: [dist/, a.b/c]}\n", 1)
 	if _, diags := parse(t, ok); diags.HasErrors() {
 		t.Fatalf("rejected:\n%s", render(diags))
+	}
+}
+
+// Round 17: blank container options, control and format characters in paths,
+// and path segments Windows would rename are rejected.
+func TestRound17PathsAndOptions(t *testing.T) {
+	src := strings.Replace(minimal, "        steps:\n", "        container: {image: alpine, options: \"  \"}\n        steps:\n", 1)
+	_, diags := parse(t, src)
+	expectError(t, diags, "stages[0].jobs[0].container.options", "must not be blank")
+	for _, p := range []string{"a\\u0000b/", "a\\u001bb/", "a\\u202eb/", "a\\u2028b/", "a/. /x", "dist./", "a/b "} {
+		src := strings.Replace(minimal, "          - run: make test\n", "          - uploadArtifact: {name: out, paths: [\""+p+"\"]}\n", 1)
+		if _, diags := parse(t, src); !diags.HasErrors() {
+			t.Errorf("path %q accepted", p)
+		}
+	}
+	for expr, want := range map[string][]int{"*/20 * * * *": {0, 20, 40}, "5/30 * * * *": {5, 35}, "1,2-3 * * * *": {1, 2, 3}, "0 3 * * *": {0}} {
+		var got []int
+		for m, on := range pipeline.CronMinutes(expr) {
+			if on {
+				got = append(got, m)
+			}
+		}
+		if !slices.Equal(got, want) {
+			t.Errorf("%s: %v, want %v", expr, got, want)
+		}
 	}
 }
