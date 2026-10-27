@@ -59,7 +59,7 @@ func (*Provider) Capabilities() providers.CapabilitySet {
 			Note: "downloaded through needs with artifacts: true"},
 		providers.CapabilityInfo{ID: providers.CapTestResults, Support: providers.Native, Note: "artifacts:reports:junit, uploaded even when the job fails"},
 		providers.CapabilityInfo{ID: providers.CapSecrets, Support: providers.Native,
-			Note: "create masked CI/CD variables with the secret names; GitLab masks only single-line values of at least 8 characters, and protected variables are empty on unprotected branches"},
+			Note: "create masked CI/CD variables with the secret names; GitLab masks only values of at least 8 characters on one line, with no spaces and only letters, digits, and _ : @ - + . ~ = /; protected variables are empty on unprotected branches"},
 		providers.CapabilityInfo{ID: providers.CapImageBuild, Support: providers.Emulated, Note: "runs the docker CLI"},
 		providers.CapabilityInfo{ID: providers.CapImagePush, Support: providers.Emulated, Note: "runs the docker CLI"},
 		providers.CapabilityInfo{ID: providers.CapKubernetesDeploy, Support: providers.Emulated, Note: "runs kubectl apply"},
@@ -183,6 +183,10 @@ func (pr *Provider) Validate(p *pipeline.Pipeline) diagnostics.List {
 	}
 	for _, v := range p.Variables {
 		predefined(pipeline.JoinKey("variables", v.Name), v.Name, true)
+	}
+	// Secrets are project variables, which override predefined ones too.
+	for i, s := range p.Secrets {
+		predefined(pipeline.JoinIndex("secrets", i), s, true)
 	}
 	for _, j := range p.AllJobs() {
 		for _, e := range j.Env {

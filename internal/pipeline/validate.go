@@ -1007,6 +1007,14 @@ func (v *validator) checkStep(path string, s *Step, j *Job, axes map[string]bool
 	kind := kinds[0]
 	v.checkCondition(path+".when", s.When)
 	v.checkEnv(path+".env", s.Env, axes)
+	for _, e := range s.Env {
+		for _, je := range j.Env {
+			if je.Name != e.Name && strings.EqualFold(je.Name, e.Name) {
+				v.add(diagnostics.Warningf(JoinKey(path+".env", e.Name), "env %q differs from job env %q only by case", e.Name, je.Name).
+					WithHint("Windows treats them as one variable and Linux as two; use the same spelling to override it"))
+			}
+		}
+	}
 	if s.WorkingDirectory != "" {
 		if kind != StepRun {
 			v.errorf(path+".workingDirectory", "workingDirectory applies only to run steps")
@@ -1187,27 +1195,39 @@ func (v *validator) checkExpandedImage(path, image string, m Matrix) {
 	}
 }
 
-var pwshUsingRe = regexp.MustCompile(`(?im)^\s*using\s+(namespace|module|assembly)\b`)
+var (
+	// pwshBreaks are the characters PowerShell reads as line breaks.
+	pwshBreaks = strings.NewReplacer("\r\n", "\n", "\r", "\n", "\u0085", "\n", "\u2028", "\n", "\u2029", "\n")
+	// pwshBlockComment matches <# ... #> comments, including help blocks.
+	pwshBlockComment = regexp.MustCompile(`(?s)<#.*?#>`)
+	// pwshAttribute matches a script attribute such as [CmdletBinding()] or [OutputType([int])].
+	pwshAttribute = regexp.MustCompile(`^\[\s*[A-Za-z][\w.]*\s*\(`)
+)
 
 // pwshLeadingStatement returns a PowerShell statement in a script that must be
-// the first statement of a script, or "". using is found on any line,
-// param and [CmdletBinding()] only as the first statement.
+// the first statement of a script, or "". using is found on any line, param
+// and script attributes only as the first statement after comments.
 func pwshLeadingStatement(script string) string {
-	if pwshUsingRe.MatchString(script) {
-		return "using"
-	}
+	script = pwshBlockComment.ReplaceAllString(pwshBreaks.Replace(script), " ")
+	space := func(r rune) bool { return unicode.IsSpace(r) || unicode.Is(unicode.Zs, r) || r == '\ufeff' }
+	first := ""
 	for _, line := range strings.Split(script, "\n") {
-		line = strings.ToLower(strings.TrimSpace(line))
-		if line == "" || strings.HasPrefix(line, "#") {
-			continue
+		line = strings.ToLower(strings.TrimFunc(line, space))
+		if f := strings.FieldsFunc(line, space); len(f) > 1 && f[0] == "using" {
+			switch f[1] {
+			case "namespace", "module", "assembly":
+				return "using"
+			}
 		}
-		if strings.HasPrefix(line, "param") && strings.HasPrefix(strings.TrimSpace(line[5:]), "(") {
-			return "param()"
+		if first == "" && line != "" && !strings.HasPrefix(line, "#") {
+			first = line
 		}
-		if strings.HasPrefix(line, "[cmdletbinding") {
-			return "[CmdletBinding()]"
-		}
-		break
+	}
+	switch {
+	case strings.HasPrefix(first, "param") && strings.HasPrefix(strings.TrimFunc(first[len("param"):], space), "("):
+		return "param()"
+	case pwshAttribute.MatchString(first):
+		return "a script attribute such as [CmdletBinding()]"
 	}
 	return ""
 }

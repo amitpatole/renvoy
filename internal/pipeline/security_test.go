@@ -673,3 +673,44 @@ func TestRound26SecretCaseAndPwshFirstStatements(t *testing.T) {
 		}
 	}
 }
+
+func TestRound27PwshLeadingStatementBypasses(t *testing.T) {
+	for _, run := range []string{
+		"<#\n.SYNOPSIS x\n#>\nparam($x)",
+		"<# c #> using namespace System",
+		"[ CmdletBinding()]\nparam()",
+		"[OutputType([int])]\nparam($x)",
+		"# c\rparam($x)",
+		"# c\rusing namespace System",
+		"\u00a0using namespace System",
+		"\vusing namespace System",
+		"# c\u2028param($x)",
+		"\ufeffparam($x)",
+	} {
+		src := strings.Replace(minimal, "          - run: make test\n", "          - shell: pwsh\n            run: "+strconv.Quote(run)+"\n", 1)
+		_, diags := parse(t, src)
+		expectError(t, diags, "stages[0].jobs[0].steps[0].run", "must come first")
+	}
+	for _, run := range []string{"[string]$x = 'a'\necho $x", "<# c #>\necho using", "Write-Output 'param(1)'"} {
+		src := strings.Replace(minimal, "          - run: make test\n", "          - shell: pwsh\n            run: "+strconv.Quote(run)+"\n", 1)
+		_, diags := parse(t, src)
+		for _, d := range diags {
+			if strings.Contains(d.Message, "must come first") {
+				t.Errorf("%q rejected: %s", run, d.Message)
+			}
+		}
+	}
+}
+
+func TestRound27EnvCaseAcrossLevels(t *testing.T) {
+	src := strings.Replace(minimal, "        steps:\n          - run: make test\n",
+		"        env: {FOO: job}\n        steps:\n          - run: make test\n            env: {foo: step}\n", 1)
+	_, diags := parse(t, src)
+	found := false
+	for _, d := range diags {
+		found = found || (d.Severity == diagnostics.Warning && strings.Contains(d.Message, "only by case"))
+	}
+	if !found {
+		t.Errorf("no warning:\n%s", render(diags))
+	}
+}

@@ -96,7 +96,7 @@ This section is generated from the provider code by
 - `runners.macos` (native): defaults to GitLab-hosted runner tags; override with extensions.gitlab.runnerTags
 - `jobs.container.options` (unsupported): GitLab cannot pass docker run options from the pipeline; configure them on the runner
 - `jobs.retries` (native): GitLab retries a job at most twice
-- `secrets` (native): create masked CI/CD variables with the secret names; GitLab masks only single-line values of at least 8 characters, and protected variables are empty on unprotected branches
+- `secrets` (native): create masked CI/CD variables with the secret names; GitLab masks only values of at least 8 characters on one line, with no spaces and only letters, digits, and _ : @ - + . ~ = /; protected variables are empty on unprotected branches
 - `steps.env` (emulated): rendered as a subshell that exports the variables (bash and sh only)
 - `steps.workingDirectory` (emulated): rendered as a subshell that changes directory (bash and sh only)
 - `steps.checkout` (emulated): GitLab always clones before the script; jobs without checkout set GIT_STRATEGY: none
@@ -345,8 +345,13 @@ GitLab `artifacts:when: always`, Azure `succeededOrFailed()`, Jenkins
   `GIT_STRATEGY` and `GIT_CHECKOUT` are set from checkout steps, and other
   `GIT_*` names, which the runner reads as clone settings, are a warning.
 - **PowerShell first statements.** `using` statements, a leading `param()`, and
-  `[CmdletBinding()]` must start a script, but providers add statements before
-  each run script, so they are an error.
+  script attributes such as `[CmdletBinding()]` must start a script, but
+  providers add statements before each run script, so they are an error, also
+  after comment-based help (`<# ... #>`).
+- **Names that differ only by case.** Artifact names that differ only by case
+  are an error (Azure artifact names and Windows file systems ignore case). A
+  step `env` name that differs from a job `env` name only by case is a warning:
+  Windows treats them as one variable and Linux as two.
 - **Empty values on Jenkins.** Jenkins may drop an environment entry whose value
   is empty, so the variable is unset rather than empty; this is a warning.
 - **Jenkins timeouts** wrap the stage's steps, so `timeoutMinutes` does not

@@ -224,6 +224,7 @@ func Artifacts(p *pipeline.Pipeline) map[string]Artifact {
 func checkArtifacts(p *pipeline.Pipeline) diagnostics.List {
 	var diags diagnostics.List
 	producers := map[string]*pipeline.Step{}
+	folded := map[string]*pipeline.Step{}
 	for _, j := range p.AllJobs() {
 		for _, s := range j.Steps {
 			if s.UploadArtifact == nil {
@@ -234,7 +235,15 @@ func checkArtifacts(p *pipeline.Pipeline) diagnostics.List {
 					"artifact %q is already uploaded by job %q", s.UploadArtifact.Name, first.Job.Name))
 				continue
 			}
+			// Azure artifact names and Windows stash directories ignore case.
+			if first, dup := folded[strings.ToLower(s.UploadArtifact.Name)]; dup {
+				diags = append(diags, diagnostics.Errorf(s.Path()+".uploadArtifact.name",
+					"artifact %q differs from %q only by case", s.UploadArtifact.Name, first.UploadArtifact.Name).
+					WithHint("Azure DevOps artifact names and Windows file systems ignore case; rename one of them"))
+				continue
+			}
 			producers[s.UploadArtifact.Name] = s
+			folded[strings.ToLower(s.UploadArtifact.Name)] = s
 		}
 	}
 	for _, j := range p.AllJobs() {

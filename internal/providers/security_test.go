@@ -825,3 +825,12 @@ func TestRound26JenkinsEmptyValues(t *testing.T) {
 		t.Errorf("jenkins empty variable: %v", d)
 	}
 }
+
+func TestRound27GitLabSecretNames(t *testing.T) {
+	for _, name := range []string{"CI_PIPELINE_SOURCE", "GIT_STRATEGY"} {
+		src := strings.Replace(round14Base, "stages:", "secrets: ["+name+"]\nstages:", 1)
+		if d := round14(t, "gitlab", src); !hasDiag(d, diagnostics.Error, "secrets[0]", "") {
+			t.Errorf("gitlab secret %s: %v", name, d)
+		}
+	}
+}

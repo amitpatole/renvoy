@@ -256,3 +256,8 @@ All notable changes to this project are documented here. The format follows
   are an error, since every provider adds statements before the script. Jenkins
   warns on empty variable and `env` values, which it may drop. GitLab and Azure
   notes say how to create secrets so they are masked.
+- The PowerShell first-statement check also covers comment-based help before
+  `param()`, other script attributes, CR, NEL, and Unicode line breaks, Unicode
+  spaces, and a byte order mark. Artifact names that differ only by case are an
+  error. GitLab secrets are checked against the variables its rules and clone
+  settings read, as variables already were.

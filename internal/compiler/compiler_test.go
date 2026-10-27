@@ -132,6 +132,9 @@ func TestGraphErrors(t *testing.T) {
 		{"duplicate artifact", "  - name: a\n    jobs:\n      - name: a1\n        steps:\n          - uploadArtifact:\n              name: dist\n              paths: [dist/]\n" +
 			"          - uploadArtifact:\n              name: dist\n              paths: [out/]\n",
 			"stages[0].jobs[0].steps[1].uploadArtifact.name", "already uploaded"},
+		{"artifact names differing by case", "  - name: a\n    jobs:\n      - name: a1\n        steps:\n          - uploadArtifact:\n              name: Dist\n              paths: [dist/]\n" +
+			"          - uploadArtifact:\n              name: dist\n              paths: [out/]\n",
+			"stages[0].jobs[0].steps[1].uploadArtifact.name", "only by case"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
