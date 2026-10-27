@@ -49,7 +49,8 @@ dependency graph, and naming rules that a schema cannot express.
   entries of one `env` map and the axes of one matrix must differ by more than case.
 - **Image names** follow the Docker reference grammar once variables are
   substituted: an optional registry host, lowercase path components, an optional
-  `:tag`, and an optional `@sha256:...` digest, at most 255 characters.
+  `:tag`, and an optional digest (`@sha256:` with 64 lowercase hex digits, or
+  sha384 or sha512), at most 255 characters. IPv6 registry hosts use brackets.
 - **Control variables.** Environment variables that change how shells, runtimes,
   or git behave (`BASH_ENV`, `ENV`, `PATH`, `LD_PRELOAD`, `NODE_OPTIONS`,
   `PYTHONSTARTUP`, `JAVA_TOOL_OPTIONS`, `GIT_SSH_COMMAND`, `GIT_CONFIG_*`, and
@@ -66,6 +67,8 @@ dependency graph, and naming rules that a schema cannot express.
 - **Paths.** Paths are relative to the workspace, use `/`, never contain `..`, and
   never start with `-`.
   Artifact and cache paths are literal (no wildcards); directories end with `/`.
+  Paths must not start with `!` or `#`, contain `\`, or start or end with spaces,
+  which GitHub's artifact and cache actions read as exclusions, comments, or escapes.
 - **Unknown fields are errors**, with the line, column, and a suggestion.
 
 ## Top level

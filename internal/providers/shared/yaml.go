@@ -84,7 +84,7 @@ var yaml11Patterns = []*regexp.Regexp{
 	regexp.MustCompile(`^[-+]?(\.[0-9]|[0-9_])[0-9_,:.]*([eE][-+]?[0-9]+)?$`),
 	regexp.MustCompile(`^[-+]?0[xXoObB][0-9a-fA-F_,]*$`),
 	regexp.MustCompile(`^[-+]?\.(inf|Inf|INF|nan|NaN|NAN)$`),
-	regexp.MustCompile(`^[0-9]{4}-[0-9]{1,2}-[0-9]{1,2}([Tt \t]|$)`),
+	regexp.MustCompile(`^-?[0-9]{4}-[0-9]{1,2}-[0-9]{1,2}([Tt \t]|$)`),
 	regexp.MustCompile(`^(<<|=|:.*)$`),
 }
 

@@ -491,3 +491,26 @@ func TestRound14PortableNames(t *testing.T) {
 		}
 	}
 }
+
+// Round 15: artifact and cache paths are literal on every provider, and image
+// digests must have the exact length of their algorithm.
+func TestRound15PathsAndDigests(t *testing.T) {
+	for _, p := range []string{"!dist/", "#notes", `build\out`, " dist/", "dist/ "} {
+		src := strings.Replace(minimal, "          - run: make test\n", "          - uploadArtifact: {name: out, paths: [\""+strings.ReplaceAll(p, `\`, `\\`)+"\"]}\n", 1)
+		_, diags := parse(t, src)
+		expectError(t, diags, "stages[0].jobs[0].steps[0].uploadArtifact.paths[0]", "must not start with '!' or '#'")
+	}
+	image := func(ref string) diagnostics.List {
+		_, diags := parse(t, strings.Replace(minimal, "        steps:\n", "        container: {image: \""+ref+"\"}\n        steps:\n", 1))
+		return diags
+	}
+	for _, ref := range []string{"a@sha256:" + strings.Repeat("a", 63), "a@sha256:" + strings.Repeat("a", 65),
+		"a@sha256:" + strings.Repeat("A", 64), "a@md5:" + strings.Repeat("a", 32)} {
+		expectError(t, image(ref), "stages[0].jobs[0].container.image", "not a valid image reference")
+	}
+	for _, ref := range []string{"a@sha512:" + strings.Repeat("0", 128), "[::1]:5000/team/app:1"} {
+		if diags := image(ref); diags.HasErrors() {
+			t.Errorf("%s rejected:\n%s", ref, render(diags))
+		}
+	}
+}

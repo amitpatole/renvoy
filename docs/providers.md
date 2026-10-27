@@ -288,6 +288,10 @@ GitLab `artifacts:when: always`, Azure `succeededOrFailed()`, Jenkins
 - **GitHub matrix axes** named `include` or `exclude` are an error, since GitHub
   reserves those keys. Variables and env entries named `GITHUB_*` or `RUNNER_*`
   warn, because GitHub does not let workflows override its default variables.
+- **Azure reserved prefixes.** Azure does not pass variables whose names start
+  with `endpoint`, `input`, `secret`, `path`, or `securefile` (in any case) to
+  tasks and scripts, so variables, secrets, job `env` names, and matrix axes with
+  those prefixes are an error for Azure (for example `SECRET_KEY`, `INPUT_DIR`).
 - **GitLab limits.** A job may need at most 50 jobs by default (`ci_max_needs`
   on self-managed instances), so more is a warning; `parallel:matrix` creates
   at most 200 jobs, so a larger matrix is an error.

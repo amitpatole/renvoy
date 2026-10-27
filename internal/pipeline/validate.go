@@ -849,6 +849,11 @@ func ValidateRelPath(s string) error {
 			return fmt.Errorf("path %q must not contain '..'", s)
 		}
 	}
+	if strings.HasPrefix(s, "!") || strings.HasPrefix(s, "#") || strings.Contains(s, "\\") || strings.TrimSpace(s) != s {
+		// actions/upload-artifact and actions/cache read ! as an exclusion and # as
+		// a comment, trim lines, and treat \ as a glob escape.
+		return fmt.Errorf("path %q must not start with '!' or '#', contain '\\', or start or end with spaces; separate directories with '/'", s)
+	}
 	if strings.ContainsAny(s, "\n\r\t'\"`$,;|&<>") {
 		return fmt.Errorf("path %q contains characters that are not portable across providers", s)
 	}
@@ -1004,10 +1009,10 @@ func (v *validator) checkImage(path, image string, axes map[string]bool) {
 var imageRefRe = func() *regexp.Regexp {
 	const (
 		domainPart = `(?:[a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9-]*[a-zA-Z0-9])`
-		domain     = domainPart + `(?:\.` + domainPart + `)*(?::[0-9]+)?`
+		domain     = `(?:` + domainPart + `(?:\.` + domainPart + `)*|\[[0-9A-Fa-f:]+\])(?::[0-9]+)?`
 		pathPart   = `[a-z0-9]+(?:(?:[._]|__|-+)[a-z0-9]+)*`
 		tag        = `[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}`
-		digest     = `[A-Za-z][A-Za-z0-9]*(?:[-_+.][A-Za-z][A-Za-z0-9]*)*:[0-9a-fA-F]{32,}`
+		digest     = `(?:sha256:[a-f0-9]{64}|sha384:[a-f0-9]{96}|sha512:[a-f0-9]{128})`
 	)
 	return regexp.MustCompile(`^(?:` + domain + `/)?` + pathPart + `(?:/` + pathPart + `)*(?::` + tag + `)?(?:@` + digest + `)?$`)
 }()

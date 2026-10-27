@@ -160,3 +160,10 @@ All notable changes to this project are documented here. The format follows
   that differ only by case are rejected; Azure matrix legs stay unique ignoring
   case; pipelines cannot be named after Windows devices; more Bamboo root keys
   are reserved for job names; `init --force` keeps a `.renvoy-backup` copy.
+- Azure rejects variables, secrets, job `env` names, and matrix axes starting
+  with `endpoint`, `input`, `secret`, `path`, or `securefile`, which Azure
+  documents it does not pass to scripts (`SECRET_KEY` would arrive empty).
+- Paths cannot start with `!` or `#`, contain `\`, or have surrounding spaces,
+  which GitHub's artifact and cache actions read as exclusions, comments,
+  escapes, or trim; negative-year timestamps are quoted in generated YAML; image
+  digests must have their algorithm's exact length; IPv6 registry hosts work.

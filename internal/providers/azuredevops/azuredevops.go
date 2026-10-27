@@ -145,6 +145,30 @@ func (pr *Provider) Validate(p *pipeline.Pipeline) diagnostics.List {
 	diags = append(diags, extDiags...)
 	add := func(d diagnostics.Diagnostic) { diags = append(diags, d.WithProvider(Name)) }
 
+	// Azure does not pass variables with these prefixes to tasks and scripts.
+	reserved := func(path, kind, name string) {
+		for _, prefix := range []string{"ENDPOINT", "INPUT", "SECRET", "PATH", "SECUREFILE"} {
+			if strings.HasPrefix(strings.ToUpper(name), prefix) {
+				add(diagnostics.Errorf(path, "%s %q starts with %q, a prefix Azure Pipelines reserves, so scripts would not receive it", kind, name, strings.ToLower(prefix)).
+					WithHint("rename it; Azure reserves names starting with endpoint, input, secret, path, and securefile in any case"))
+				return
+			}
+		}
+	}
+	for _, v := range p.Variables {
+		reserved(pipeline.JoinKey("variables", v.Name), "variable", v.Name)
+	}
+	for i, s := range p.Secrets {
+		reserved(pipeline.JoinIndex("secrets", i), "secret", s)
+	}
+	for _, j := range p.AllJobs() {
+		for _, e := range j.Env {
+			reserved(pipeline.JoinKey(j.Path()+".env", e.Name), "env name", e.Name)
+		}
+		for _, axis := range j.Matrix {
+			reserved(pipeline.JoinKey(j.Path()+".matrix", axis.Name), "matrix axis", axis.Name)
+		}
+	}
 	for _, j := range p.AllJobs() {
 		jp := j.Path()
 		if j.Environment != nil {

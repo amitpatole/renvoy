@@ -417,3 +417,22 @@ func TestAzureLegNamesIgnoreCase(t *testing.T) {
 		t.Fatalf("legs %v:\n%s", seen, files[0].Content)
 	}
 }
+
+// Round 15: Azure does not pass variables named with its reserved prefixes
+// (endpoint, input, secret, path, securefile, in any case) to scripts.
+func TestAzureReservedVariablePrefixes(t *testing.T) {
+	src := strings.Replace(round14Base, "extensions:\n", "secrets: [SecretKey]\nvariables: {INPUT_DIR: x, path_prefix: y, OUTPUT_DIR: z}\nextensions:\n", 1)
+	src = strings.Replace(src, "        steps:", "        env: {EndpointUrl: u}\n        matrix: {securefile_name: [a]}\n        steps:", 1)
+	d := round14(t, "azure-devops", src)
+	for _, path := range []string{"secrets[0]", "variables.INPUT_DIR", "variables.path_prefix", "stages[0].jobs[0].env.EndpointUrl", "stages[0].jobs[0].matrix.securefile_name"} {
+		if !hasDiag(d, diagnostics.Error, path, "Azure Pipelines reserves") {
+			t.Errorf("%s not rejected: %v", path, d)
+		}
+	}
+	if hasDiag(d, diagnostics.Error, "variables.OUTPUT_DIR", "reserves") {
+		t.Error("OUTPUT_DIR rejected")
+	}
+	if g := round14(t, "github-actions", src); hasDiag(g, diagnostics.Error, "variables.INPUT_DIR", "reserves") {
+		t.Error("github-actions applies the Azure rule")
+	}
+}

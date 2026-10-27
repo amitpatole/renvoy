@@ -54,7 +54,7 @@ func TestSpacingNeverChangesMeaning(t *testing.T) {
 // would read as booleans, numbers, times, merge keys, or symbols are quoted.
 func TestYAML11LookalikesAreQuoted(t *testing.T) {
 	for _, s := range []string{"yes", "No", "ON", "off", "y", "N", "12:30", "1:30", "1,000", "1:30.5", "190:20:30.15",
-		"<<", "=", ":foo", "_", "2001-12-14 21:59:43.10 -5", "1.2.3", "-.Inf", "0x1F"} {
+		"<<", "=", ":foo", "_", "2001-12-14 21:59:43.10 -5", "-2001-12-14 21:59:43", "-2001-12-14T21:59:43", "1.2.3", "-.Inf", "0x1F"} {
 		if n := Str(s); n.Style != yaml.DoubleQuotedStyle {
 			t.Errorf("%q is not double-quoted", s)
 		}
