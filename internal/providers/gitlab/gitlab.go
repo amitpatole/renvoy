@@ -58,6 +58,8 @@ func (*Provider) Capabilities() providers.CapabilitySet {
 		providers.CapabilityInfo{ID: providers.CapArtifactDownload, Support: providers.Emulated,
 			Note: "downloaded through needs with artifacts: true"},
 		providers.CapabilityInfo{ID: providers.CapTestResults, Support: providers.Native, Note: "artifacts:reports:junit, uploaded even when the job fails"},
+		providers.CapabilityInfo{ID: providers.CapSecrets, Support: providers.Native,
+			Note: "create masked CI/CD variables with the secret names; GitLab masks only single-line values of at least 8 characters, and protected variables are empty on unprotected branches"},
 		providers.CapabilityInfo{ID: providers.CapImageBuild, Support: providers.Emulated, Note: "runs the docker CLI"},
 		providers.CapabilityInfo{ID: providers.CapImagePush, Support: providers.Emulated, Note: "runs the docker CLI"},
 		providers.CapabilityInfo{ID: providers.CapKubernetesDeploy, Support: providers.Emulated, Note: "runs kubectl apply"},

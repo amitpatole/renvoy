@@ -246,7 +246,13 @@ All notable changes to this project are documented here. The format follows
   so `secrets: [TOKEN]` was exposed. The starter and examples use
   `REGISTRY_PASSWORD`. Bamboo also rejects task `env` names starting with
   `bamboo_`, which replaced the plan variable or secret scripts read.
-  PowerShell run scripts stop at the first failing command, so a failed
+  PowerShell run scripts stop at the first failing command (PowerShell 7.4+), so a failed
   `docker build` no longer lets the next line push a stale image. Jenkins
   `timeoutMinutes` wraps the steps instead of the stage, so agent and approval
   waits no longer count. Matrix values used in image references are validated.
+- Secrets that differ only by case are an error (GitHub secret names and
+  Windows environment names ignore case, so one stood in for the other).
+  PowerShell scripts using `using`, a leading `param()`, or `[CmdletBinding()]`
+  are an error, since every provider adds statements before the script. Jenkins
+  warns on empty variable and `env` values, which it may drop. GitLab and Azure
+  notes say how to create secrets so they are masked.

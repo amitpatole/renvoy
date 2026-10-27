@@ -818,3 +818,10 @@ func TestRound25JenkinsTimeoutAndPwsh(t *testing.T) {
 		}
 	}
 }
+
+func TestRound26JenkinsEmptyValues(t *testing.T) {
+	src := strings.Replace(round14Base, "stages:", "variables: {V: \"\"}\nstages:", 1)
+	if d := round14(t, "jenkins", src); !hasDiag(d, diagnostics.Warning, "variables.V", "unset instead of empty") {
+		t.Errorf("jenkins empty variable: %v", d)
+	}
+}

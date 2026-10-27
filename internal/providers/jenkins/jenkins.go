@@ -186,6 +186,23 @@ func (pr *Provider) Validate(p *pipeline.Pipeline) diagnostics.List {
 				WithHint("rename it, for example to RELEASE_BRANCH"))
 		}
 	}
+	// Jenkins drops environment entries whose value is empty (EnvVars.override),
+	// so scripts see the variable as unset rather than empty.
+	empty := func(path string, vars pipeline.Vars) {
+		for _, e := range vars {
+			if e.Value == "" {
+				add(diagnostics.Warningf(pipeline.JoinKey(path, e.Name), "Jenkins may leave %q unset instead of empty", e.Name).
+					WithHint("give it a non-empty value if scripts tell unset and empty apart"))
+			}
+		}
+	}
+	empty("variables", p.Variables)
+	for _, j := range p.AllJobs() {
+		empty(j.Path()+".env", j.Env)
+		for _, s := range j.Steps {
+			empty(s.Path()+".env", s.Env)
+		}
+	}
 	for _, v := range p.Variables {
 		reserved(pipeline.JoinKey("variables", v.Name), "variable", v.Name)
 	}

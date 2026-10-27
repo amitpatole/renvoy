@@ -52,6 +52,8 @@ func (*Provider) Capabilities() providers.CapabilitySet {
 		providers.CapabilityInfo{ID: providers.CapArtifactUpload, Support: providers.Native, Note: "publish step; one path per artifact"},
 		providers.CapabilityInfo{ID: providers.CapArtifactDownload, Support: providers.Native, Note: "DownloadPipelineArtifact@2 into the sources directory"},
 		providers.CapabilityInfo{ID: providers.CapTestResults, Support: providers.Native, Note: "PublishTestResults@2, run even when earlier steps fail"},
+		providers.CapabilityInfo{ID: providers.CapSecrets, Support: providers.Native,
+			Note: "create secret variables (marked secret, or in a variable group) with the secret names; Azure masks only variables marked secret"},
 		providers.CapabilityInfo{ID: providers.CapImageBuild, Support: providers.Emulated, Note: "runs the docker CLI"},
 		providers.CapabilityInfo{ID: providers.CapImagePush, Support: providers.Emulated, Note: "runs the docker CLI"},
 		providers.CapabilityInfo{ID: providers.CapKubernetesDeploy, Support: providers.Emulated, Note: "runs kubectl apply"},

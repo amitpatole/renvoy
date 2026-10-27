@@ -134,14 +134,17 @@ func (v *validator) run() {
 			v.errorf(path, "variable value is %d bytes; at most %d are allowed", len(va.Value), MaxVariableValue)
 		}
 	}
-	seenSecrets := map[string]bool{}
+	seenSecrets := map[string]string{}
 	for i, s := range p.Secrets {
 		path := JoinIndex("secrets", i)
 		v.checkEnvName(path, s, "secret")
-		if seenSecrets[s] {
+		if prev, dup := seenSecrets[strings.ToUpper(s)]; dup && prev == s {
 			v.errorf(path, "secret %q is declared more than once", s)
+		} else if dup {
+			v.errorf(path, "secret %q differs from %q only by case", s, prev).
+				Hint = "GitHub secret names and Windows environment names ignore case, so these would be one secret"
 		}
-		seenSecrets[s] = true
+		seenSecrets[strings.ToUpper(s)] = s
 		if prev, ok := folded[strings.ToUpper(s)]; ok {
 			v.errorf(path, "secret %q has the same name as variable %q (ignoring case)", s, prev)
 		}
@@ -993,6 +996,12 @@ func (v *validator) checkStep(path string, s *Step, j *Job, axes map[string]bool
 	if strings.ContainsAny(s.Name, "\n\r") {
 		v.errorf(path+".name", "step names must be a single line")
 	}
+	if kinds[0] == StepRun && s.ShellFor(j.OS()) == ShellPwsh {
+		if stmt := pwshLeadingStatement(s.Run); stmt != "" {
+			v.errorf(path+".run", "PowerShell scripts cannot use %s, which must come first in a script", stmt).
+				Hint = "providers add statements before each script; use fully qualified type names, or put the code in a script file"
+		}
+	}
 
 	v.warnProviderSyntax(path+".name", s.Name)
 	kind := kinds[0]
@@ -1176,4 +1185,29 @@ func (v *validator) checkExpandedImage(path, image string, m Matrix) {
 		v.add(diagnostics.Warningf(path, "branch names with / or capital letters make %q an invalid image reference", image).
 			WithHint("build only branches with simple lowercase names, or use ${git.sha} in the tag"))
 	}
+}
+
+var pwshUsingRe = regexp.MustCompile(`(?im)^\s*using\s+(namespace|module|assembly)\b`)
+
+// pwshLeadingStatement returns a PowerShell statement in a script that must be
+// the first statement of a script, or "". using is found on any line,
+// param and [CmdletBinding()] only as the first statement.
+func pwshLeadingStatement(script string) string {
+	if pwshUsingRe.MatchString(script) {
+		return "using"
+	}
+	for _, line := range strings.Split(script, "\n") {
+		line = strings.ToLower(strings.TrimSpace(line))
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		if strings.HasPrefix(line, "param") && strings.HasPrefix(strings.TrimSpace(line[5:]), "(") {
+			return "param()"
+		}
+		if strings.HasPrefix(line, "[cmdletbinding") {
+			return "[CmdletBinding()]"
+		}
+		break
+	}
+	return ""
 }

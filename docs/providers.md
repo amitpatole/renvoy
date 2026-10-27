@@ -96,6 +96,7 @@ This section is generated from the provider code by
 - `runners.macos` (native): defaults to GitLab-hosted runner tags; override with extensions.gitlab.runnerTags
 - `jobs.container.options` (unsupported): GitLab cannot pass docker run options from the pipeline; configure them on the runner
 - `jobs.retries` (native): GitLab retries a job at most twice
+- `secrets` (native): create masked CI/CD variables with the secret names; GitLab masks only single-line values of at least 8 characters, and protected variables are empty on unprotected branches
 - `steps.env` (emulated): rendered as a subshell that exports the variables (bash and sh only)
 - `steps.workingDirectory` (emulated): rendered as a subshell that changes directory (bash and sh only)
 - `steps.checkout` (emulated): GitLab always clones before the script; jobs without checkout set GIT_STRATEGY: none
@@ -113,6 +114,7 @@ This section is generated from the provider code by
 
 - `triggers.pullRequest` (native): pr triggers apply to GitHub and Bitbucket repositories; Azure Repos uses branch policies
 - `jobs.retries` (unsupported): Azure Pipelines cannot retry jobs; retry inside the step script or remove retries
+- `secrets` (native): create secret variables (marked secret, or in a variable group) with the secret names; Azure masks only variables marked secret
 - `steps.uses` (native): references must be Azure tasks: Name@MajorVersion
 - `steps.cache` (native): Cache@2 task; one path per cache step
 - `steps.uploadArtifact` (native): publish step; one path per artifact
@@ -234,7 +236,8 @@ prepending `set -eo pipefail`, Bamboo with a shebang plus `set -eo pipefail`.
 GitLab's bash runners already behave this way. PowerShell steps start with
 `$ErrorActionPreference = 'Stop'` and `$PSNativeCommandUseErrorActionPreference
 = $true`, so a failing cmdlet or native command (`docker build`) stops the script
-on PowerShell 7.3 and later; older PowerShell ignores the second line and only
+on PowerShell 7.4 and later; older PowerShell, including the Windows PowerShell
+5.1 that Bamboo's PowerShell tasks run, ignores the second line and only
 the last command's exit code fails the step.
 
 **References never become script text.** `${secrets.X}`, `${git.branch}`, and
@@ -341,6 +344,11 @@ GitLab `artifacts:when: always`, Azure `succeededOrFailed()`, Jenkins
   names would replace the value, so it is an error on that provider. GitLab
   `GIT_STRATEGY` and `GIT_CHECKOUT` are set from checkout steps, and other
   `GIT_*` names, which the runner reads as clone settings, are a warning.
+- **PowerShell first statements.** `using` statements, a leading `param()`, and
+  `[CmdletBinding()]` must start a script, but providers add statements before
+  each run script, so they are an error.
+- **Empty values on Jenkins.** Jenkins may drop an environment entry whose value
+  is empty, so the variable is unset rather than empty; this is a warning.
 - **Jenkins timeouts** wrap the stage's steps, so `timeoutMinutes` does not
   count the wait for an agent or an approval, as on the other providers.
   `retries` stays a stage option, so a retry waits for the agent and input

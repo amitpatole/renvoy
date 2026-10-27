@@ -653,3 +653,23 @@ func TestRound25MatrixImageValues(t *testing.T) {
 		t.Errorf("no warning for ${git.branch} in an image:\n%s", render(diags))
 	}
 }
+
+func TestRound26SecretCaseAndPwshFirstStatements(t *testing.T) {
+	src := strings.Replace(minimal, "stages:", "secrets: [API_SECRET, api_secret]\nstages:", 1)
+	_, diags := parse(t, src)
+	expectError(t, diags, "secrets[1]", "only by case")
+	for _, run := range []string{"using namespace System.IO", "# c\n  Param ($x)\necho $x", "[CmdletBinding()]\nparam()", "echo a\nUSING module Foo"} {
+		src := strings.Replace(minimal, "          - run: make test\n", "          - shell: pwsh\n            run: "+strconv.Quote(run)+"\n", 1)
+		_, diags := parse(t, src)
+		expectError(t, diags, "stages[0].jobs[0].steps[0].run", "must come first")
+	}
+	for _, run := range []string{"echo using namespace", "$param = 1", "#requires -Version 7\necho a"} {
+		src := strings.Replace(minimal, "          - run: make test\n", "          - shell: pwsh\n            run: "+strconv.Quote(run)+"\n", 1)
+		_, diags := parse(t, src)
+		for _, d := range diags {
+			if strings.Contains(d.Message, "must come first") {
+				t.Errorf("%q rejected: %s", run, d.Message)
+			}
+		}
+	}
+}

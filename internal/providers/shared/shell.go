@@ -74,7 +74,7 @@ func Command(s *pipeline.Step, shell string, name EnvName) string {
 	case pipeline.StepRun:
 		script := Script(pipeline.MustTemplate(s.Run), shell, name)
 		if shell == pipeline.ShellPwsh {
-			// Stop at the first failing cmdlet or native command (PowerShell 7.3+),
+			// Stop at the first failing cmdlet or native command (PowerShell 7.4+),
 			// as bash -e does, instead of running the rest of the script.
 			script = PwshStrict + script
 		}
