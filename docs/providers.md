@@ -168,7 +168,7 @@ This section is generated from the provider code by
 - `jobs.matrix` (unsupported): Bamboo has no job matrix; declare one job per combination
 - `jobs.timeoutMinutes` (unsupported): Bamboo configures hung build detection per plan, not per job
 - `jobs.retries` (unsupported): Bamboo cannot retry jobs from Specs; retry inside the step script
-- `secrets` (provider-managed): create Bamboo variables (encrypted) with the secret names; scripts read them as $bamboo_NAME
+- `secrets` (provider-managed): create encrypted Bamboo variables with the secret names, which must contain password, passphrase, secret, or sshkey; scripts read them as $bamboo_NAME
 - `steps.env` (native): script task environment variables
 - `steps.workingDirectory` (native): script task working subdirectory
 - `steps.checkout` (emulated): YAML Specs check out the repository first in jobs without a checkout task
@@ -200,7 +200,7 @@ This section is generated from the provider code by
 - `jobs.matrix` (unsupported): Bamboo has no job matrix; declare one job per combination
 - `jobs.timeoutMinutes` (unsupported): Bamboo configures hung build detection per plan, not per job
 - `jobs.retries` (unsupported): Bamboo cannot retry jobs from Specs; retry inside the step script
-- `secrets` (provider-managed): create Bamboo variables (encrypted) with the secret names; scripts read them as $bamboo_NAME
+- `secrets` (provider-managed): create encrypted Bamboo variables with the secret names, which must contain password, passphrase, secret, or sshkey; scripts read them as $bamboo_NAME
 - `steps.env` (native): script task environment variables
 - `steps.workingDirectory` (native): script task working subdirectory
 - `steps.checkout` (native): VcsCheckoutTask
@@ -231,7 +231,11 @@ Bamboo applies inherited conditions to every task.
 **Scripts stop at the first failing command.** Bash steps run with `-eo pipefail`
 everywhere: GitHub through `defaults.run.shell: bash`, Azure and Jenkins by
 prepending `set -eo pipefail`, Bamboo with a shebang plus `set -eo pipefail`.
-GitLab's bash runners already behave this way.
+GitLab's bash runners already behave this way. PowerShell steps start with
+`$ErrorActionPreference = 'Stop'` and `$PSNativeCommandUseErrorActionPreference
+= $true`, so a failing cmdlet or native command (`docker build`) stops the script
+on PowerShell 7.3 and later; older PowerShell ignores the second line and only
+the last command's exit code fails the step.
 
 **References never become script text.** `${secrets.X}`, `${git.branch}`, and
 matrix values are passed to scripts as environment variables, never pasted into
@@ -337,6 +341,17 @@ GitLab `artifacts:when: always`, Azure `succeededOrFailed()`, Jenkins
   names would replace the value, so it is an error on that provider. GitLab
   `GIT_STRATEGY` and `GIT_CHECKOUT` are set from checkout steps, and other
   `GIT_*` names, which the runner reads as clone settings, are a warning.
+- **Jenkins timeouts** wrap the stage's steps, so `timeoutMinutes` does not
+  count the wait for an agent or an approval, as on the other providers.
+  `retries` stays a stage option, so a retry waits for the agent and input
+  again.
+- **Bamboo secrets** must have names containing `password`, `passphrase`,
+  `secret`, or `sshkey`; Bamboo encrypts and masks only such variables, so
+  other names are an error. Task `env` names starting with `bamboo_` are an
+  error, since scripts read plan variables and secrets under that prefix.
+- **Matrix values in images** are checked one by one against the image
+  reference grammar. `${git.branch}` in an image is a warning, because branch
+  names with `/` or capitals make an invalid tag.
 - **Variables that `${git.*}` reads.** Scripts read the commit and branch from
   `GITHUB_SHA` (GitHub), `CI_COMMIT_SHA` and `CI_COMMIT_REF_NAME` (GitLab),
   `BUILD_SOURCEVERSION` (Azure), `GIT_COMMIT` (Jenkins), and

@@ -22,8 +22,8 @@ variables:
   PYTHONUNBUFFERED: "1"
 
 secrets:
-  - REGISTRY_TOKEN
-  - KUBE_CONFIG
+  - REGISTRY_PASSWORD
+  - KUBE_CONFIG_SECRET
 
 stages:
   - name: test
@@ -84,7 +84,7 @@ stages:
               image: ${variables.IMAGE}:${git.sha}
               buildArgs:
                 REVISION: ${git.sha}
-          - run: echo "${secrets.REGISTRY_TOKEN}" | docker login registry.example.com -u ci --password-stdin
+          - run: echo "${secrets.REGISTRY_PASSWORD}" | docker login registry.example.com -u ci --password-stdin
           - pushImage:
               image: ${variables.IMAGE}:${git.sha}
 
@@ -101,7 +101,7 @@ stages:
         timeoutMinutes: 15
         steps:
           - uses: checkout
-          - run: printf '%s' "${secrets.KUBE_CONFIG}" > kubeconfig
+          - run: printf '%s' "${secrets.KUBE_CONFIG_SECRET}" > kubeconfig
           - deployKubernetes:
               manifests: deploy/k8s/
               namespace: production

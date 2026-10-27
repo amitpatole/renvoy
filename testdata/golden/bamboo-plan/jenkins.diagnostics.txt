@@ -8,7 +8,7 @@ info [jenkins] renvoy.yaml:13:3 triggers.pullRequest:
   triggers.pullRequest is configured outside the generated file: enable pull request discovery on the multibranch pipeline
 
 info [jenkins] renvoy.yaml:21:1 secrets:
-  create Jenkins secret text credentials with the IDs REGISTRY_TOKEN
+  create Jenkins secret text credentials with the IDs REGISTRY_PASSWORD
 
 info [jenkins] renvoy.yaml:59:5 stages[1].jobs:
   Jenkins runs the jobs of stage "build" one after another because some depend on others or use a matrix

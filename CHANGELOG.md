@@ -241,3 +241,12 @@ All notable changes to this project are documented here. The format follows
   made Jenkins scripts print `pinned` as the commit. GitHub also checks the
   default names of raw `actions/upload-artifact` steps (`artifact`,
   `merged-artifacts`) against `uploadArtifact` names.
+- Bamboo rejects secret names without `password`, `passphrase`, `secret`, or
+  `sshkey`: Bamboo stores other variables in plain text and does not mask them,
+  so `secrets: [TOKEN]` was exposed. The starter and examples use
+  `REGISTRY_PASSWORD`. Bamboo also rejects task `env` names starting with
+  `bamboo_`, which replaced the plan variable or secret scripts read.
+  PowerShell run scripts stop at the first failing command, so a failed
+  `docker build` no longer lets the next line push a stale image. Jenkins
+  `timeoutMinutes` wraps the steps instead of the stage, so agent and approval
+  waits no longer count. Matrix values used in image references are validated.

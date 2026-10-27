@@ -54,7 +54,7 @@ info [github-actions] renvoy.yaml:
   hint: grant more with extensions.github-actions.permissions, e.g. packages: write to push images
 
 info [jenkins] renvoy.yaml:23:1 secrets:
-  create Jenkins secret text credentials with the IDs REGISTRY_TOKEN
+  create Jenkins secret text credentials with the IDs REGISTRY_PASSWORD
 
 warning [jenkins] renvoy.yaml:62:9 stages[2].jobs[0].environment:
   Jenkins has no deployment environments; "staging" is only exported as RENVOY_ENVIRONMENT

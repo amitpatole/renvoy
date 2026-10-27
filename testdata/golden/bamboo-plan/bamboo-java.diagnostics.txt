@@ -6,7 +6,7 @@ warning [bamboo-java] renvoy.yaml:15:7 triggers.schedules[0]:
   hint: adjust the hours for the server time zone and make sure main is the plan branch
 
 info [bamboo-java] renvoy.yaml:21:1 secrets:
-  secrets is configured outside the generated file: create Bamboo variables (encrypted) with the secret names; scripts read them as $bamboo_NAME
+  secrets is configured outside the generated file: create encrypted Bamboo variables with the secret names, which must contain password, passphrase, secret, or sshkey; scripts read them as $bamboo_NAME
 
 info [bamboo-java] renvoy.yaml:34:1 stages:
   Bamboo runs these stages one after another: test, build, build (2), deploy

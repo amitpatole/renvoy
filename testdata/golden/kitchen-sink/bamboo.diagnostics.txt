@@ -11,7 +11,7 @@ error [bamboo] renvoy.yaml:
   hint: add extensions.bamboo.projectKey and extensions.bamboo.planKey, e.g. PROJ and BUILD
 
 info [bamboo] renvoy.yaml:12:1 secrets:
-  secrets is configured outside the generated file: create Bamboo variables (encrypted) with the secret names; scripts read them as $bamboo_NAME
+  secrets is configured outside the generated file: create encrypted Bamboo variables with the secret names, which must contain password, passphrase, secret, or sshkey; scripts read them as $bamboo_NAME
 
 error [bamboo] renvoy.yaml:27:9 stages[0].jobs[0].retries:
   Bamboo YAML Specs cannot express jobs.retries
@@ -26,8 +26,8 @@ error [bamboo] renvoy.yaml:37:13 stages[0].jobs[0].steps[2].uses:
   hint: Renvoy does not invent Bamboo plugin task keys; use run steps
 
 error [bamboo] renvoy.yaml:43:15 stages[0].jobs[0].steps[3].env.NODE_AUTH_TOKEN:
-  Bamboo cannot pass ${secrets.NPM_TOKEN} through task environment variables safely; its value could contain quotes
-  hint: reference ${secrets.NPM_TOKEN} in the run script instead
+  Bamboo cannot pass ${secrets.NPM_SECRET} through task environment variables safely; its value could contain quotes
+  hint: reference ${secrets.NPM_SECRET} in the run script instead
 
 error [bamboo] renvoy.yaml:47:15 stages[0].jobs[0].steps[4].when.events:
   Bamboo task conditions cannot test the triggering event

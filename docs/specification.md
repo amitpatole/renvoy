@@ -14,7 +14,7 @@ triggers:
   pullRequest: {}
 variables:
   IMAGE: ghcr.io/acme/web-service
-secrets: [REGISTRY_TOKEN]
+secrets: [REGISTRY_PASSWORD]
 stages:
   - name: test
     jobs:
@@ -175,7 +175,7 @@ Every step does exactly one thing. All steps accept `name`, `env`, and `when`;
 | Step | Fields | Notes |
 | --- | --- | --- |
 | `uses: checkout` | | Checks out the repository. |
-| `run` | `run`, `shell` (`bash`, `sh`, `pwsh`), `workingDirectory` | Default shell: `bash` on Linux and macOS, `pwsh` on Windows. Bash stops at the first failing command (`-eo pipefail`). |
+| `run` | `run`, `shell` (`bash`, `sh`, `pwsh`), `workingDirectory` | Default shell: `bash` on Linux and macOS, `pwsh` on Windows. Bash stops at the first failing command (`-eo pipefail`); PowerShell 7.3+ does too (`$PSNativeCommandUseErrorActionPreference`). |
 | `uses: <ref>` | `uses`, `with` | A provider-native reusable step: a GitHub action (`owner/repo@ref`) or an Azure task (`Name@1`). Other providers report an error. |
 | `cache` | `key`, `files`, `paths` | Restores before later steps and saves when the job succeeds. `files` are hashed into the key. |
 | `uploadArtifact` | `name`, `paths` | Names are unique per pipeline. |

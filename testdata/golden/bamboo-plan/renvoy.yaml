@@ -19,7 +19,7 @@ variables:
   IMAGE: registry.example.com/acme/service
 
 secrets:
-  - REGISTRY_TOKEN
+  - REGISTRY_PASSWORD
 
 extensions:
   bamboo:
@@ -76,7 +76,7 @@ stages:
               name: dist
           - buildImage:
               image: ${variables.IMAGE}:${git.sha}
-          - run: echo "${secrets.REGISTRY_TOKEN}" | docker login registry.example.com -u ci --password-stdin
+          - run: echo "${secrets.REGISTRY_PASSWORD}" | docker login registry.example.com -u ci --password-stdin
           - pushImage:
               image: ${variables.IMAGE}:${git.sha}
 

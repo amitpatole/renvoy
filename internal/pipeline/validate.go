@@ -549,7 +549,7 @@ func (v *validator) checkJob(path string, j *Job) {
 			v.errorf(cp+".image", "container image is required")
 		} else {
 			v.checkTemplate(cp+".image", j.Container.Image, axes, NSVariables, NSMatrix)
-			v.checkExpandedImage(cp+".image", j.Container.Image)
+			v.checkExpandedImage(cp+".image", j.Container.Image, j.Matrix)
 		}
 		if j.OS() == OSWindows || j.OS() == OSMacOS {
 			v.errorf(cp, "job containers require a linux runner")
@@ -1082,7 +1082,7 @@ func (v *validator) checkStep(path string, s *Step, j *Job, axes map[string]bool
 		}
 	case StepBuildImage:
 		b := s.BuildImage
-		v.checkImage(path+".buildImage.image", b.Image, axes)
+		v.checkImage(path+".buildImage.image", b.Image, axes, j.Matrix)
 		if b.Context != "" && b.Context != "." {
 			v.checkRelPath(path+".buildImage.context", b.Context, false)
 		}
@@ -1096,7 +1096,7 @@ func (v *validator) checkStep(path string, s *Step, j *Job, axes map[string]bool
 			v.checkControlEnv(ap, a.Name, a.Value)
 		}
 	case StepPushImage:
-		v.checkImage(path+".pushImage.image", s.PushImage.Image, axes)
+		v.checkImage(path+".pushImage.image", s.PushImage.Image, axes, j.Matrix)
 	case StepDeployKubernetes:
 		d := s.DeployKubernetes
 		v.checkRelPath(path+".deployKubernetes.manifests", d.Manifests, true)
@@ -1106,13 +1106,13 @@ func (v *validator) checkStep(path string, s *Step, j *Job, axes map[string]bool
 	}
 }
 
-func (v *validator) checkImage(path, image string, axes map[string]bool) {
+func (v *validator) checkImage(path, image string, axes map[string]bool, m Matrix) {
 	if image == "" {
 		v.errorf(path, "image is required")
 		return
 	}
 	v.checkTemplate(path, image, axes, NSVariables, NSGit, NSMatrix)
-	v.checkExpandedImage(path, image)
+	v.checkExpandedImage(path, image, m)
 }
 
 // imageRefRe is the Docker image reference grammar: an optional registry host,
@@ -1130,25 +1130,50 @@ var imageRefRe = func() *regexp.Regexp {
 
 // checkExpandedImage validates an image name with variable values substituted,
 // because some providers inline variables into image fields.
-func (v *validator) checkExpandedImage(path, image string) {
+func (v *validator) checkExpandedImage(path, image string, m Matrix) {
 	t, err := ParseTemplate(image)
 	if err != nil {
 		return
 	}
-	var b strings.Builder
-	for _, seg := range t {
-		switch {
-		case seg.Ref == nil:
-			b.WriteString(seg.Literal)
-		case seg.Ref.Namespace == NSVariables:
-			val, _ := v.p.Variables.Get(seg.Ref.Name)
-			b.WriteString(val)
-		default:
-			b.WriteString("x")
+	// expand substitutes variables, the value given for one matrix axis, and
+	// "x" for other references.
+	expand := func(axis, value string) string {
+		var b strings.Builder
+		for _, seg := range t {
+			switch {
+			case seg.Ref == nil:
+				b.WriteString(seg.Literal)
+			case seg.Ref.Namespace == NSVariables:
+				val, _ := v.p.Variables.Get(seg.Ref.Name)
+				b.WriteString(val)
+			case seg.Ref.Namespace == NSMatrix && seg.Ref.Name == axis:
+				b.WriteString(value)
+			default:
+				b.WriteString("x")
+			}
+		}
+		return b.String()
+	}
+	valid := func(s string) bool { return len(s) <= 255 && imageRefRe.MatchString(s) }
+	if s := expand("", ""); !valid(s) {
+		v.errorf(path, "image %q is not a valid image reference once variables are substituted (%q)", image, s).
+			Hint = "use [registry/]lowercase/path[:tag][@sha256:digest], such as ghcr.io/acme/app:1.2"
+		return
+	}
+	for _, axis := range m {
+		if !slices.Contains(t.Refs(), Ref{Namespace: NSMatrix, Name: axis.Name}) {
+			continue
+		}
+		for _, val := range axis.Values {
+			if s := expand(axis.Name, val); !valid(s) {
+				v.errorf(path, "image %q is not a valid image reference for matrix value %s=%q (%q)", image, axis.Name, val, s).
+					Hint = "image paths are lowercase and tags cannot contain /; change the matrix value or where it is used"
+				return
+			}
 		}
 	}
-	if len(b.String()) > 255 || !imageRefRe.MatchString(b.String()) {
-		v.errorf(path, "image %q is not a valid image reference once variables are substituted (%q)", image, b.String()).
-			Hint = "use [registry/]lowercase/path[:tag][@sha256:digest], such as ghcr.io/acme/app:1.2"
+	if slices.Contains(t.Refs(), Ref{Namespace: NSGit, Name: GitBranch}) {
+		v.add(diagnostics.Warningf(path, "branch names with / or capital letters make %q an invalid image reference", image).
+			WithHint("build only branches with simple lowercase names, or use ${git.sha} in the tag"))
 	}
 }

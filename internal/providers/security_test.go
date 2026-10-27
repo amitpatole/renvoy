@@ -767,7 +767,7 @@ func TestRound24GitVariables(t *testing.T) {
 		{"gitlab", step("CI_COMMIT_SHA"), "stages[0].jobs[0].steps[0].env.CI_COMMIT_SHA"},
 		{"gitlab", top("CI_COMMIT_REF_NAME: x"), "variables.CI_COMMIT_REF_NAME"},
 		{"bamboo", top("planRepository_branchName: x"), "variables.planRepository_branchName"},
-		{"bamboo-java", step("bamboo_planRepository_revision"), "stages[0].jobs[0].steps[0].env.bamboo_planRepository_revision"},
+		{"bamboo-java", step("planRepository_revision"), "stages[0].jobs[0].steps[0].env.planRepository_revision"},
 	} {
 		if d := round14(t, c.prov, c.src); !hasDiag(d, diagnostics.Error, c.path, "would replace the commit or branch") {
 			t.Errorf("%s %s: %v", c.prov, c.path, d)
@@ -784,6 +784,37 @@ func TestRound24DefaultArtifactNames(t *testing.T) {
 			"        steps:\n          - uploadArtifact: {name: "+c.name+", paths: [a]}\n          - uses: "+c.uses+"\n", 1)
 		if d := round14(t, "github-actions", src); !hasDiag(d, diagnostics.Error, "stages[0].jobs[0].steps[1].with.name", "also uploaded") {
 			t.Errorf("%s default name: %v", c.uses, d)
+		}
+	}
+}
+
+func TestRound25BambooNames(t *testing.T) {
+	sec := strings.Replace(round14Base, "stages:", "secrets: [API_TOKEN]\nstages:", 1)
+	sec = strings.Replace(sec, "{run: echo MARKER}", "{run: \"echo ${secrets.API_TOKEN}\"}", 1)
+	for _, prov := range []string{"bamboo", "bamboo-java"} {
+		if d := round14(t, prov, sec); !hasDiag(d, diagnostics.Error, "secrets[0]", "plain text") {
+			t.Errorf("%s secret without a secret word: %v", prov, d)
+		}
+		env := strings.Replace(round14Base, "[{run: echo MARKER}]", "[{run: echo MARKER, env: {bamboo_V: x}}]", 1)
+		if d := round14(t, prov, env); !hasDiag(d, diagnostics.Error, "stages[0].jobs[0].steps[0].env.bamboo_V", "bamboo_") {
+			t.Errorf("%s bamboo_ env: %v", prov, d)
+		}
+	}
+}
+
+func TestRound25JenkinsTimeoutAndPwsh(t *testing.T) {
+	src := strings.Replace(round14Base, "        steps: [{run: echo MARKER}]", "        timeoutMinutes: 30\n        steps: [{run: echo MARKER}]", 1)
+	out := render19(t, "jenkins", src)
+	if steps, timeout := strings.Index(out, "steps {"), strings.Index(out, "timeout("); timeout < steps {
+		t.Errorf("jenkins timeout is a stage option:\n%s", out)
+	}
+	if !strings.Contains(out, "timeout(time: 30, unit: 'MINUTES') {") {
+		t.Errorf("jenkins timeout does not wrap the steps:\n%s", out)
+	}
+	win := strings.Replace(round14Base, "        steps: [{run: echo MARKER}]", "        runsOn: windows\n        steps: [{run: echo MARKER}]", 1)
+	for _, prov := range []string{"github-actions", "azure-devops", "gitlab", "jenkins"} {
+		if out := render19(t, prov, win); !strings.Contains(out, "PSNativeCommandUseErrorActionPreference = $true") {
+			t.Errorf("%s pwsh script does not stop on failing commands:\n%s", prov, out)
 		}
 	}
 }

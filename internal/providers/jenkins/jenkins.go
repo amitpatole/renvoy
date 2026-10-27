@@ -559,9 +559,6 @@ func (r *renderer) directives(w *writer, j *pipeline.Job) {
 	if !hasCheckout(j) {
 		opts = append(opts, "skipDefaultCheckout()")
 	}
-	if j.TimeoutMinutes > 0 {
-		opts = append(opts, fmt.Sprintf("timeout(time: %d, unit: 'MINUTES')", j.TimeoutMinutes))
-	}
 	if j.Retries > 0 {
 		opts = append(opts, fmt.Sprintf("retry(%d)", j.Retries+1))
 	}
@@ -674,6 +671,11 @@ func writeAnyOf(w *writer, alts []string) {
 func (r *renderer) body(w *writer, j *pipeline.Job) {
 	var junit []string
 	w.open("steps")
+	// A timeout option would also count the wait for an agent and for input;
+	// the step times only the work, as on the other providers.
+	if j.TimeoutMinutes > 0 {
+		w.open("timeout(time: %d, unit: 'MINUTES')", j.TimeoutMinutes)
+	}
 	wrote := false
 	for _, s := range j.Steps {
 		switch s.Kind() {
@@ -696,6 +698,9 @@ func (r *renderer) body(w *writer, j *pipeline.Job) {
 	}
 	if !wrote {
 		w.line("echo 'No steps to run'")
+	}
+	if j.TimeoutMinutes > 0 {
+		w.close()
 	}
 	w.close()
 	if len(junit) > 0 {

@@ -637,3 +637,19 @@ func TestRound22DeadConditions(t *testing.T) {
 		t.Error("condition with a push event is reported as never matching")
 	}
 }
+
+func TestRound25MatrixImageValues(t *testing.T) {
+	src := strings.Replace(minimal, "        steps:\n          - run: make test\n",
+		"        matrix: {os: [linux, Linux]}\n        steps:\n          - buildImage: {image: \"ghcr.io/acme/app-${matrix.os}:1\"}\n", 1)
+	_, diags := parse(t, src)
+	expectError(t, diags, "stages[0].jobs[0].steps[0].buildImage.image", `matrix value os="Linux"`)
+	tag := strings.Replace(minimal, "          - run: make test\n", "          - buildImage: {image: \"ghcr.io/acme/app:${git.branch}\"}\n", 1)
+	_, diags = parse(t, tag)
+	found := false
+	for _, d := range diags {
+		found = found || (d.Severity == diagnostics.Warning && strings.Contains(d.Message, "branch names with /"))
+	}
+	if !found {
+		t.Errorf("no warning for ${git.branch} in an image:\n%s", render(diags))
+	}
+}

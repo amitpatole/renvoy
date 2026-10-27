@@ -63,13 +63,22 @@ func Word(t pipeline.Template, shell string, name EnvName) string {
 	return b.String()
 }
 
+// PwshStrict starts PowerShell run scripts.
+const PwshStrict = "$ErrorActionPreference = 'Stop'\n$PSNativeCommandUseErrorActionPreference = $true\n"
+
 // Command returns the shell script a run or builtin command step executes, or
 // "" for step kinds that are not shell commands.
 func Command(s *pipeline.Step, shell string, name EnvName) string {
 	word := func(v string) string { return Word(pipeline.MustTemplate(v), shell, name) }
 	switch s.Kind() {
 	case pipeline.StepRun:
-		return Script(pipeline.MustTemplate(s.Run), shell, name)
+		script := Script(pipeline.MustTemplate(s.Run), shell, name)
+		if shell == pipeline.ShellPwsh {
+			// Stop at the first failing cmdlet or native command (PowerShell 7.3+),
+			// as bash -e does, instead of running the rest of the script.
+			script = PwshStrict + script
+		}
+		return script
 	case pipeline.StepBuildImage:
 		b := s.BuildImage
 		args := []string{"docker", "build"}

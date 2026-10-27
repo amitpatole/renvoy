@@ -24,7 +24,7 @@ variables:
 # Names of secrets stored in your CI system. Reference them as ${secrets.NAME}.
 # Never put secret values in this file.
 secrets:
-  - REGISTRY_TOKEN
+  - REGISTRY_PASSWORD
 
 stages:
   - name: test
@@ -54,7 +54,7 @@ stages:
               context: .
               image: ${variables.IMAGE}:${git.sha}
           - name: Log in to the registry
-            run: echo "${secrets.REGISTRY_TOKEN}" | docker login registry.example.com --username ci --password-stdin
+            run: echo "${secrets.REGISTRY_PASSWORD}" | docker login registry.example.com --username ci --password-stdin
           - pushImage:
               image: ${variables.IMAGE}:${git.sha}
 

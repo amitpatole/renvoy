@@ -103,7 +103,7 @@ func capabilities(java bool) providers.CapabilitySet {
 		providers.CapabilityInfo{ID: providers.CapRetries, Support: providers.Unsupported,
 			Note: "Bamboo cannot retry jobs from Specs; retry inside the step script"},
 		providers.CapabilityInfo{ID: providers.CapSecrets, Support: providers.ProviderManaged,
-			Note: "create Bamboo variables (encrypted) with the secret names; scripts read them as $bamboo_NAME"},
+			Note: "create encrypted Bamboo variables with the secret names, which must contain password, passphrase, secret, or sshkey; scripts read them as $bamboo_NAME"},
 		providers.CapabilityInfo{ID: providers.CapStepEnv, Support: providers.Native, Note: "script task environment variables"},
 		providers.CapabilityInfo{ID: providers.CapWorkingDirectory, Support: providers.Native, Note: "script task working subdirectory"},
 		checkout,
@@ -211,10 +211,39 @@ func validate(p *pipeline.Pipeline, prov providers.Provider, java bool) diagnost
 	add := func(d diagnostics.Diagnostic) { diags = append(diags, d.WithProvider(name)) }
 	// Plan variables are exported as bamboo_<name>, so both spellings collide.
 	diags = append(diags, shared.GitVarCollisions(p, name, func(n string) bool {
-		n = strings.TrimPrefix(n, "BAMBOO_")
 		return n == "PLANREPOSITORY_BRANCHNAME" || n == "PLANREPOSITORY_REVISION"
 	})...)
 
+	for i, s := range p.Secrets {
+		if !secretName(s) {
+			add(diagnostics.Errorf(pipeline.JoinIndex("secrets", i),
+				"Bamboo encrypts and masks only variables whose names contain password, passphrase, secret, or sshkey, so %q would be stored in plain text", s).
+				WithHint("rename it, for example to %s_SECRET", s))
+		}
+	}
+	// Scripts read plan variables and secrets as bamboo_<name>; task
+	// environment entries with that prefix would replace them.
+	for _, j := range p.AllJobs() {
+		envs := []struct {
+			path string
+			vars pipeline.Vars
+		}{{j.Path() + ".env", j.Env}}
+		for _, s := range j.Steps {
+			envs = append(envs, struct {
+				path string
+				vars pipeline.Vars
+			}{s.Path() + ".env", s.Env})
+		}
+		for _, e := range envs {
+			for _, v := range e.vars {
+				if strings.HasPrefix(strings.ToUpper(v.Name), "BAMBOO_") {
+					add(diagnostics.Errorf(pipeline.JoinKey(e.path, v.Name),
+						"environment names starting with bamboo_ are where Bamboo scripts read plan variables and secrets").
+						WithHint("rename it without the bamboo_ prefix"))
+				}
+			}
+		}
+	}
 	for _, v := range p.Variables {
 		lower := strings.ToLower(v.Name)
 		for _, word := range []string{"password", "secret", "passphrase", "sshkey"} {
@@ -752,4 +781,15 @@ func sortedKeys[V any](m map[string]V) []string {
 	}
 	slices.Sort(keys)
 	return keys
+}
+
+// secretName reports whether Bamboo treats a variable with this name as secret.
+func secretName(name string) bool {
+	lower := strings.ToLower(name)
+	for _, word := range []string{"password", "secret", "passphrase", "sshkey"} {
+		if strings.Contains(lower, word) {
+			return true
+		}
+	}
+	return false
 }

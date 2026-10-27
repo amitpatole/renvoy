@@ -10,7 +10,7 @@ info [jenkins] renvoy.yaml:10:3 triggers.push:
   triggers.push is configured outside the generated file: multibranch pipelines build pushed branches and tags through SCM webhooks or indexing
 
 info [jenkins] renvoy.yaml:12:1 secrets:
-  create Jenkins secret text credentials with the IDs NPM_TOKEN
+  create Jenkins secret text credentials with the IDs NPM_SECRET
 
 error [jenkins] renvoy.yaml:33:13 stages[0].jobs[0].steps[1].cache:
   Jenkins Declarative Pipeline cannot express steps.cache
@@ -21,7 +21,7 @@ error [jenkins] renvoy.yaml:37:13 stages[0].jobs[0].steps[2].uses:
   hint: Renvoy does not invent plugin steps; use run steps
 
 error [jenkins] renvoy.yaml:43:15 stages[0].jobs[0].steps[3].env.NODE_AUTH_TOKEN:
-  Jenkins step environment cannot bind ${secrets.NPM_TOKEN} without interpolating the secret into Groovy
+  Jenkins step environment cannot bind ${secrets.NPM_SECRET} without interpolating the secret into Groovy
   hint: reference the secret directly in the script, or bind it in the job env as the whole value
 
 error [jenkins] renvoy.yaml:46:13 stages[0].jobs[0].steps[4].when:
