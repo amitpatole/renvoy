@@ -163,6 +163,7 @@ func (pr *Provider) Validate(p *pipeline.Pipeline) diagnostics.List {
 	cfg, extDiags := decode(p)
 	diags = append(diags, extDiags...)
 	add := func(d diagnostics.Diagnostic) { diags = append(diags, d.WithProvider(Name)) }
+	diags = append(diags, shared.GitVarCollisions(p, Name, func(name string) bool { return name == "GIT_COMMIT" })...)
 
 	for i, sc := range p.Triggers.Schedules {
 		// Jenkins fires only when both day fields match; cron fires when either does.

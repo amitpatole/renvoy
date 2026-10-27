@@ -144,6 +144,7 @@ func (pr *Provider) Validate(p *pipeline.Pipeline) diagnostics.List {
 	_, extDiags := decode(p)
 	diags = append(diags, extDiags...)
 	add := func(d diagnostics.Diagnostic) { diags = append(diags, d.WithProvider(Name)) }
+	diags = append(diags, shared.GitVarCollisions(p, Name, func(name string) bool { return name == "BUILD_SOURCEVERSION" })...)
 
 	for _, j := range p.AllJobs() {
 		if j.TimeoutMinutes > 360 {

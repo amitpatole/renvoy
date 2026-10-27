@@ -337,6 +337,13 @@ GitLab `artifacts:when: always`, Azure `succeededOrFailed()`, Jenkins
   names would replace the value, so it is an error on that provider. GitLab
   `GIT_STRATEGY` and `GIT_CHECKOUT` are set from checkout steps, and other
   `GIT_*` names, which the runner reads as clone settings, are a warning.
+- **Variables that `${git.*}` reads.** Scripts read the commit and branch from
+  `GITHUB_SHA` (GitHub), `CI_COMMIT_SHA` and `CI_COMMIT_REF_NAME` (GitLab),
+  `BUILD_SOURCEVERSION` (Azure), `GIT_COMMIT` (Jenkins), and
+  `bamboo_planRepository_revision` and `bamboo_planRepository_branchName`
+  (Bamboo). A variable, secret, `env` entry, or matrix axis with one of these
+  names, in any case (on Bamboo with or without the `bamboo_` prefix), would
+  replace the value, so it is an error on that provider.
 - **Hidden files in artifacts.** GitHub's upload action skips files starting
   with `.` unless told otherwise, so Renvoy sets `include-hidden-files: true`;
   Jenkins turns off Ant's default excludes (`.gitignore`, `.git/`), so every
@@ -351,8 +358,9 @@ GitLab `artifacts:when: always`, Azure `succeededOrFailed()`, Jenkins
   strips both `refs/heads/` and `refs/tags/`.
 - **GitHub on Windows** rejects `shell: sh`, which GitHub supports only on Linux
   and macOS runners. A raw `actions/upload-artifact` step is checked against the
-  `test-results-` names too, in any input case and including the `new-name` of
-  `actions/upload-artifact/merge`.
+  `test-results-` names and the names `uploadArtifact` steps use, in any input
+  case, including `actions/upload-artifact/merge` and the actions' default
+  names (`artifact`, `merged-artifacts`).
 - **Jenkins schedules** that restrict both the day of month and the day of week
   are an error: Jenkins runs them only on days matching both fields, while
   cron, GitHub, GitLab, and Azure run them on days matching either.

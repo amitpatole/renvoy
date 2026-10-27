@@ -209,6 +209,11 @@ func validate(p *pipeline.Pipeline, prov providers.Provider, java bool) diagnost
 	ext, extDiags := decode(p, name)
 	diags = append(diags, extDiags...)
 	add := func(d diagnostics.Diagnostic) { diags = append(diags, d.WithProvider(name)) }
+	// Plan variables are exported as bamboo_<name>, so both spellings collide.
+	diags = append(diags, shared.GitVarCollisions(p, name, func(n string) bool {
+		n = strings.TrimPrefix(n, "BAMBOO_")
+		return n == "PLANREPOSITORY_BRANCHNAME" || n == "PLANREPOSITORY_REVISION"
+	})...)
 
 	for _, v := range p.Variables {
 		lower := strings.ToLower(v.Name)

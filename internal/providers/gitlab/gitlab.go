@@ -154,6 +154,7 @@ func (pr *Provider) Validate(p *pipeline.Pipeline) diagnostics.List {
 	cfg, extDiags := decode(p)
 	diags = append(diags, extDiags...)
 	add := func(d diagnostics.Diagnostic) { diags = append(diags, d.WithProvider(Name)) }
+	diags = append(diags, shared.GitVarCollisions(p, Name, gitVar)...)
 
 	// GitLab's predefined variables use these prefixes; some cannot be overridden.
 	// YAML variables (pipeline variables, job env, and matrix axes) also reach
@@ -162,6 +163,8 @@ func (pr *Provider) Validate(p *pipeline.Pipeline) diagnostics.List {
 	predefined := func(path, name string, yamlVar bool) {
 		up := strings.ToUpper(name)
 		switch {
+		case gitVar(up):
+			// Reported by GitVarCollisions.
 		case yamlVar && ruleVar(up):
 			add(diagnostics.Errorf(path, "%q would replace the GitLab variable that the generated rules read", name).
 				WithHint("rename it; GitLab lets pipeline variables override predefined ones such as CI_COMMIT_BRANCH"))
@@ -648,8 +651,13 @@ func sortedKeys[V any](m map[string]V) []string {
 // workflow and job rules read.
 func ruleVar(name string) bool {
 	switch name {
-	case "CI_PIPELINE_SOURCE", "CI_COMMIT_BRANCH", "CI_COMMIT_TAG", "CI_COMMIT_REF_NAME", "CI_COMMIT_SHA", "CI_DEFAULT_BRANCH":
+	case "CI_PIPELINE_SOURCE", "CI_COMMIT_BRANCH", "CI_COMMIT_TAG", "CI_DEFAULT_BRANCH":
 		return true
 	}
 	return strings.HasPrefix(name, "CI_MERGE_REQUEST_")
+}
+
+// gitVar reports whether name is a predefined variable that ${git.*} reads.
+func gitVar(name string) bool {
+	return name == "CI_COMMIT_SHA" || name == "CI_COMMIT_REF_NAME"
 }

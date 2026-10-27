@@ -215,8 +215,8 @@ All notable changes to this project are documented here. The format follows
   `refs/tags/`. GitHub rejects `shell: sh` on Windows and checks raw
   `actions/upload-artifact` steps against the reserved `test-results-` prefix.
 - GitHub matches the reserved `test-results-` prefix against `with` inputs in any
-  case (`NAME:`), the `new-name` input of `actions/upload-artifact/merge`, and
-  names with leading spaces or capitals, which previously slipped past the check.
+  case (`NAME:`), `actions/upload-artifact/merge`, and names with leading spaces
+  or capitals, which previously slipped past the check.
   Cron expressions must use single spaces with no leading or trailing space,
   since GitHub, Azure, and Jenkins copy them as written. Conditions warn when an
   event has no matching trigger, or when they list branches with only the
@@ -234,3 +234,10 @@ All notable changes to this project are documented here. The format follows
   was dropped), and a raw `actions/upload-artifact` step cannot reuse a name an
   `uploadArtifact` step uploads. Jenkins archives and stashes files that Ant
   excludes by default, such as `.gitignore`.
+- Every provider rejects variables, secrets, `env` entries, and matrix axes
+  named after the variable its scripts read `${git.sha}` or `${git.branch}` from
+  (`GITHUB_SHA`, `CI_COMMIT_SHA`, `BUILD_SOURCEVERSION`, `GIT_COMMIT`,
+  `planRepository_revision`, and the branch equivalents); `GIT_COMMIT: pinned`
+  made Jenkins scripts print `pinned` as the commit. GitHub also checks the
+  default names of raw `actions/upload-artifact` steps (`artifact`,
+  `merged-artifacts`) against `uploadArtifact` names.

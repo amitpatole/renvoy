@@ -156,6 +156,7 @@ func (pr *Provider) Validate(p *pipeline.Pipeline) diagnostics.List {
 	cfg, extDiags := decode(p)
 	diags = append(diags, extDiags...)
 	add := func(d diagnostics.Diagnostic) { diags = append(diags, d.WithProvider(Name)) }
+	diags = append(diags, shared.GitVarCollisions(p, Name, func(name string) bool { return name == "GITHUB_SHA" })...)
 
 	for i, s := range p.Secrets {
 		if strings.HasPrefix(strings.ToUpper(s), "GITHUB_") {
@@ -163,7 +164,7 @@ func (pr *Provider) Validate(p *pipeline.Pipeline) diagnostics.List {
 		}
 	}
 	defaultVar := func(path, name string) {
-		if up := strings.ToUpper(name); strings.HasPrefix(up, "GITHUB_") || strings.HasPrefix(up, "RUNNER_") {
+		if up := strings.ToUpper(name); up != "GITHUB_SHA" && (strings.HasPrefix(up, "GITHUB_") || strings.HasPrefix(up, "RUNNER_")) {
 			add(diagnostics.Warningf(path, "GitHub does not let workflows override default variables named GITHUB_* or RUNNER_*, so %q may be ignored", name).
 				WithHint("rename it"))
 		}
@@ -253,12 +254,9 @@ func (pr *Provider) Validate(p *pipeline.Pipeline) diagnostics.List {
 					add(diagnostics.Errorf(s.Path()+".uses", "%q is not a GitHub action reference", s.Uses).
 						WithHint("use owner/repo@ref, owner/repo/path@ref, ./path, or docker://image"))
 				}
-				// Action inputs are case-insensitive; upload-artifact/merge names its output new-name.
+				// Action inputs are case-insensitive.
 				if strings.HasPrefix(strings.ToLower(s.Uses), "actions/upload-artifact") {
-					for _, e := range s.With {
-						if key := strings.ToLower(e.Name); key != "name" && key != "new-name" {
-							continue
-						}
+					for _, e := range uploadNames(s) {
 						path := pipeline.JoinKey(s.Path()+".with", e.Name)
 						switch {
 						case publishes && reservedTestResults(e.Value):
@@ -623,6 +621,25 @@ func bindings(s *pipeline.Step) []pipeline.Var {
 
 // testResultsPrefix starts the names of artifacts holding test results.
 const testResultsPrefix = "test-results-"
+
+// uploadNames returns the artifact names a raw upload-artifact step creates,
+// including the action's default when the step sets none.
+func uploadNames(s *pipeline.Step) pipeline.Vars {
+	var out pipeline.Vars
+	for _, e := range s.With {
+		if strings.EqualFold(e.Name, "name") {
+			out = append(out, e)
+		}
+	}
+	if len(out) == 0 {
+		def := "artifact"
+		if strings.HasPrefix(strings.ToLower(s.Uses), "actions/upload-artifact/merge@") {
+			def = "merged-artifacts"
+		}
+		out = append(out, pipeline.Var{Name: "name", Value: def})
+	}
+	return out
+}
 
 // artifactKey normalises an artifact name for collision checks.
 func artifactKey(name string) string {

@@ -358,7 +358,7 @@ func TestRound14ProviderRules(t *testing.T) {
 	if d := round14(t, "github-actions", job("        matrix: {Include: [a, b], v: [x]}\n")); !hasDiag(d, diagnostics.Error, "stages[0].jobs[0].matrix.Include", "reserves the matrix key") {
 		t.Errorf("github include axis: %v", d)
 	}
-	if d := round14(t, "github-actions", job("        env: {GITHUB_SHA: x}\n")); !hasDiag(d, diagnostics.Warning, "stages[0].jobs[0].env.GITHUB_SHA", "GITHUB_*") {
+	if d := round14(t, "github-actions", job("        env: {GITHUB_REF: x}\n")); !hasDiag(d, diagnostics.Warning, "stages[0].jobs[0].env.GITHUB_REF", "GITHUB_*") {
 		t.Errorf("github default variable: %v", d)
 	}
 	var axes []string
@@ -695,7 +695,7 @@ func TestRound21ProviderRules(t *testing.T) {
 func TestRound22ReservedArtifactInputs(t *testing.T) {
 	for _, c := range []struct{ uses, with, key string }{
 		{"actions/upload-artifact@v4", "{NAME: test-results-j, path: x}", "NAME"},
-		{"actions/upload-artifact/merge@v4", "{new-name: test-results-j}", "new-name"},
+		{"actions/upload-artifact/merge@v4", "{name: test-results-j}", "name"},
 		{"actions/upload-artifact@v4", "{name: \" Test-Results-j\", path: x}", "name"},
 	} {
 		src := strings.Replace(round14Base, "        steps: [{run: echo MARKER}]\n",
@@ -749,5 +749,41 @@ func TestRound23ArtifactUploads(t *testing.T) {
 	}
 	if out := render19(t, "jenkins", up); !strings.Contains(out, "defaultExcludes: false") || !strings.Contains(out, "useDefaultExcludes: false") {
 		t.Errorf("jenkins upload drops default excludes:\n%s", out)
+	}
+}
+
+func TestRound24GitVariables(t *testing.T) {
+	top := func(vars string) string {
+		return strings.Replace(round14Base, "stages:", "variables: {"+vars+"}\nstages:", 1)
+	}
+	step := func(env string) string {
+		return strings.Replace(round14Base, "[{run: echo MARKER}]", "[{run: echo MARKER, env: {"+env+": x}}]", 1)
+	}
+	for _, c := range []struct{ prov, src, path string }{
+		{"github-actions", top("GITHUB_SHA: x"), "variables.GITHUB_SHA"},
+		{"azure-devops", top("build_sourceversion: x"), "variables.build_sourceversion"},
+		{"jenkins", top("GIT_COMMIT: x"), "variables.GIT_COMMIT"},
+		{"jenkins", step("GIT_COMMIT"), "stages[0].jobs[0].steps[0].env.GIT_COMMIT"},
+		{"gitlab", step("CI_COMMIT_SHA"), "stages[0].jobs[0].steps[0].env.CI_COMMIT_SHA"},
+		{"gitlab", top("CI_COMMIT_REF_NAME: x"), "variables.CI_COMMIT_REF_NAME"},
+		{"bamboo", top("planRepository_branchName: x"), "variables.planRepository_branchName"},
+		{"bamboo-java", step("bamboo_planRepository_revision"), "stages[0].jobs[0].steps[0].env.bamboo_planRepository_revision"},
+	} {
+		if d := round14(t, c.prov, c.src); !hasDiag(d, diagnostics.Error, c.path, "would replace the commit or branch") {
+			t.Errorf("%s %s: %v", c.prov, c.path, d)
+		}
+	}
+}
+
+func TestRound24DefaultArtifactNames(t *testing.T) {
+	for _, c := range []struct{ name, uses string }{
+		{"artifact", "actions/upload-artifact@v4"},
+		{"merged-artifacts", "actions/upload-artifact/merge@v4"},
+	} {
+		src := strings.Replace(round14Base, "        steps: [{run: echo MARKER}]\n",
+			"        steps:\n          - uploadArtifact: {name: "+c.name+", paths: [a]}\n          - uses: "+c.uses+"\n", 1)
+		if d := round14(t, "github-actions", src); !hasDiag(d, diagnostics.Error, "stages[0].jobs[0].steps[1].with.name", "also uploaded") {
+			t.Errorf("%s default name: %v", c.uses, d)
+		}
 	}
 }
