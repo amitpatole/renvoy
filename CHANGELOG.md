@@ -277,6 +277,12 @@ All notable changes to this project are documented here. The format follows
   could read GitLab's predefined value. The PowerShell check also treats a
   vertical tab as whitespace between `using` and `namespace`, finds chains of
   attributes before `param()`, and `schedules: []` is an error.
+- GitLab `environment.url` values with `%NAME%` are an error, since GitLab
+  expands them there too. Azure scripts whose `$(name)` matches a pipeline
+  variable, secret, job `env` name, or matrix axis are an error: Azure replaces
+  the macro before the shell runs, so `$(date)` meant as command substitution
+  could become a variable's or secret's value. Bamboo warns on
+  `${bamboo.name}` in the plan description and requirements.
 - Explicit empty trigger lists (`branches: []`, `tags: []`) are an error instead
   of matching everything. A Bamboo `javaPackage` segment that is a Windows
   device name (`con`, `nul`) is an error. The starter includes the Bamboo

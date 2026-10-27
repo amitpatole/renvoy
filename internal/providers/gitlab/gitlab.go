@@ -206,6 +206,10 @@ func (pr *Provider) Validate(p *pipeline.Pipeline) diagnostics.List {
 	}
 	percent("variables", p.Variables)
 	for _, j := range p.AllJobs() {
+		if j.Environment != nil && percentVarRe.MatchString(j.Environment.URL) {
+			add(diagnostics.Errorf(j.Path()+".environment.url", "GitLab would expand %q in the environment URL", percentVarRe.FindString(j.Environment.URL)).
+				WithHint("GitLab expands $NAME, ${NAME}, and %%NAME%% in environment URLs; write the URL without %%NAME%% sequences"))
+		}
 		percent(j.Path()+".env", j.Env)
 		for _, axis := range j.Matrix {
 			for i, val := range axis.Values {

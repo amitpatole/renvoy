@@ -852,3 +852,19 @@ func TestRound30GitLabExpansion(t *testing.T) {
 		t.Errorf("gitlab CI_ secret: %v", d)
 	}
 }
+
+func TestRound31ExpansionPositions(t *testing.T) {
+	env := strings.Replace(round14Base, "        steps:", "        environment: {name: prod, url: \"https://x.example/%CI_JOB_ID%\"}\n        steps:", 1)
+	if d := round14(t, "gitlab", env); !hasDiag(d, diagnostics.Error, "stages[0].jobs[0].environment.url", "would expand") {
+		t.Errorf("gitlab environment url: %v", d)
+	}
+	macro := strings.Replace(round14Base, "stages:", "variables: {date: x}\nstages:", 1)
+	macro = strings.Replace(macro, "{run: echo MARKER}", "{run: \"echo $(Date) $(echo MARKER)\"}", 1)
+	if d := round14(t, "azure-devops", macro); !hasDiag(d, diagnostics.Error, "stages[0].jobs[0].steps[0].run", "Azure replaces $(Date)") {
+		t.Errorf("azure script macro: %v", d)
+	}
+	plain := strings.Replace(round14Base, "{run: echo MARKER}", "{run: \"echo $(date)\"}", 1)
+	if d := round14(t, "azure-devops", plain); hasDiag(d, diagnostics.Error, "stages[0].jobs[0].steps[0].run", "Azure replaces") {
+		t.Errorf("azure plain command substitution rejected: %v", d)
+	}
+}

@@ -166,6 +166,36 @@ func (pr *Provider) Validate(p *pipeline.Pipeline) diagnostics.List {
 	for _, v := range p.Variables {
 		reserved(pipeline.JoinKey("variables", v.Name), "variable", v.Name)
 	}
+	// Azure replaces $(name) in a script with the variable of that name before
+	// the shell runs, so $(date) meant as command substitution would become the
+	// value of a variable named date, or a secret.
+	for _, j := range p.AllJobs() {
+		macros := map[string]bool{}
+		for _, v := range p.Variables {
+			macros[strings.ToUpper(v.Name)] = true
+		}
+		for _, s := range p.Secrets {
+			macros[strings.ToUpper(s)] = true
+		}
+		for _, e := range j.Env {
+			macros[strings.ToUpper(e.Name)] = true
+		}
+		for _, axis := range j.Matrix {
+			macros[strings.ToUpper(axis.Name)] = true
+		}
+		for _, s := range j.Steps {
+			if s.Kind() != pipeline.StepRun {
+				continue
+			}
+			for _, m := range scriptMacroRe.FindAllStringSubmatch(s.Run, -1) {
+				if macros[strings.ToUpper(m[1])] {
+					add(diagnostics.Errorf(s.Path()+".run", "Azure replaces %s in the script with the variable %s before the shell runs", m[0], m[1]).
+						WithHint("reference it as ${variables.NAME} or ${secrets.NAME}, or rename the variable if %s is a command", m[0]))
+					break
+				}
+			}
+		}
+	}
 	for i, s := range p.Secrets {
 		reserved(pipeline.JoinIndex("secrets", i), "secret", s)
 	}
@@ -438,6 +468,9 @@ func stepRefs(s *pipeline.Step) []pipeline.Ref {
 	texts = append(texts, envValues(s.With)...)
 	return append(shared.CommandRefs(s), shared.TextRefs(texts...)...)
 }
+
+// scriptMacroRe matches Azure macro syntax $(name) in a script.
+var scriptMacroRe = regexp.MustCompile(`\$\(([A-Za-z_][A-Za-z0-9_]*)\)`)
 
 // maxLegName is the longest matrix leg name Azure accepts.
 const maxLegName = 100

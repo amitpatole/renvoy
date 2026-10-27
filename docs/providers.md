@@ -370,8 +370,12 @@ GitLab `artifacts:when: always`, Azure `succeededOrFailed()`, Jenkins
   names with `/` or capitals make an invalid tag.
 - **GitLab `%NAME%` expansion.** GitLab expands `$NAME`, `${NAME}`, and
   `%NAME%` in variables. Renvoy escapes `$`, but `%NAME%` has no escape, so it is
-  an error in variable, job `env`, and matrix values for GitLab. Secrets named
-  with the `CI_` or `GITLAB_` prefix are an error too.
+  an error in variable, job `env`, matrix, and `environment.url` values for
+  GitLab. Secrets named with the `CI_` or `GITLAB_` prefix are an error too.
+- **Azure macros in scripts.** Azure replaces `$(name)` in a script with the
+  variable `name` before the shell runs. A run script whose `$(name)` matches a
+  variable, secret, job `env` name, or matrix axis is an error; other `$(...)`
+  command substitutions are left to the shell.
 - **Variables that `${git.*}` reads.** Scripts read the commit and branch from
   `GITHUB_SHA` (GitHub), `CI_COMMIT_SHA` and `CI_COMMIT_REF_NAME` (GitLab),
   `BUILD_SOURCEVERSION` (Azure), `GIT_COMMIT` (Jenkins), and

@@ -151,13 +151,16 @@ func decode(p *pipeline.Pipeline, provider string) (extension, diagnostics.List)
 		}
 		for i, r := range ext.Requirements[os] {
 			key, value, hasValue := strings.Cut(r, "=")
-			if !requirementRe.MatchString(r) || strings.TrimSpace(key) == "" || (hasValue && strings.TrimSpace(value) == "") ||
-				strings.ContainsFunc(r, unicode.IsControl) {
+			switch {
+			case !requirementRe.MatchString(r) || strings.TrimSpace(key) == "" || (hasValue && strings.TrimSpace(value) == "") ||
+				strings.ContainsFunc(r, unicode.IsControl):
 				diags = append(diags, diagnostics.Errorf(pipeline.JoinIndex(rp, i), "invalid requirement %q", r).
 					WithHint(`use a capability key, or key=regex to match its value`))
-			} else if hasValue && !matchRegexOK(value) {
+			case hasValue && !matchRegexOK(value):
 				diags = append(diags, diagnostics.Errorf(pipeline.JoinIndex(rp, i), "requirement %q matches with %q, which is not a regular expression Renvoy can confirm Bamboo accepts", r, value).
 					WithHint("Bamboo matches requirement values as Java regular expressions; use literals, ., [a-z] classes, (...) groups, | and *, +, ?, {n,m} after an atom"))
+			case strings.Contains(r, "${bamboo."):
+				diags = append(diags, diagnostics.Warningf(pipeline.JoinIndex(rp, i), "Bamboo substitutes ${bamboo.name} variables in requirement %q", r))
 			}
 		}
 	}
@@ -261,6 +264,9 @@ func validate(p *pipeline.Pipeline, prov providers.Provider, java bool) diagnost
 				break
 			}
 		}
+	}
+	if strings.Contains(p.Metadata.Description, "${bamboo.") {
+		add(diagnostics.Warningf("metadata.description", "Bamboo substitutes ${bamboo.name} variables in the plan description"))
 	}
 	if strings.ContainsAny(p.Metadata.Description, forbiddenDescription) {
 		add(diagnostics.Errorf("metadata.description", "Bamboo plan descriptions cannot contain any of %s", forbiddenDescription))
