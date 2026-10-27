@@ -508,11 +508,12 @@ func (v *validator) checkJob(path string, j *Job) {
 		if j.OS() == OSWindows || j.OS() == OSMacOS {
 			v.errorf(cp, "job containers require a linux runner")
 		}
-		if strings.ContainsAny(j.Container.Options, "\n\r") {
+		switch opts := j.Container.Options; {
+		case strings.ContainsAny(opts, "\n\r"):
 			v.errorf(cp+".options", "container options must be a single line")
-		} else if strings.ContainsFunc(j.Container.Options, unicode.IsControl) {
+		case strings.ContainsFunc(opts, unicode.IsControl):
 			v.errorf(cp+".options", "container options must not contain control characters")
-		} else if j.Container.Options != "" && strings.TrimSpace(j.Container.Options) == "" {
+		case opts != "" && strings.TrimSpace(opts) == "":
 			// Bamboo refuses blank docker run arguments.
 			v.errorf(cp+".options", "container options must not be blank; remove the field instead")
 		}
